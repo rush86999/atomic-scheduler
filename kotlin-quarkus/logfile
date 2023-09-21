@@ -1,0 +1,14 @@
+2023-08-25 16:52:21.681 EDT [67386] LOG:  starting PostgreSQL 14.2 on aarch64-apple-darwin20.6.0, compiled by Apple clang version 12.0.5 (clang-1205.0.22.9), 64-bit
+2023-08-25 16:52:21.685 EDT [67386] LOG:  listening on IPv6 address "::1", port 5432
+2023-08-25 16:52:21.685 EDT [67386] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2023-08-25 16:52:21.686 EDT [67386] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2023-08-25 16:52:21.696 EDT [67387] LOG:  database system was shut down at 2023-08-25 16:50:52 EDT
+2023-08-25 16:52:21.704 EDT [67386] LOG:  database system is ready to accept connections
+2023-08-25 16:57:01.885 EDT [67968] FATAL:  role "postgres" does not exist
+2023-08-25 17:06:24.485 EDT [68033] ERROR:  syntax error at or near "describe" at character 1
+2023-08-25 17:06:24.485 EDT [68033] STATEMENT:  describe admin_user;
+2023-08-25 18:33:52.295 EDT [67386] LOG:  received fast shutdown request
+2023-08-25 18:33:52.298 EDT [67386] LOG:  aborting any active transactions
+2023-08-25 18:33:52.305 EDT [67386] LOG:  background worker "logical replication launcher" (PID 67393) exited with exit code 1
+2023-08-25 18:33:52.308 EDT [67388] LOG:  shutting down
+2023-08-25 18:33:52.330 EDT [67386] LOG:  database system is shut down
