@@ -1,4 +1,4 @@
-# atomic-scheduler - a part of [Atomic](https://github.com/rush86999/atomic)
+# Atomic-Scheduler - a part of [Atomic](https://github.com/rush86999/atomic)
 
 
 <h1 align="center">Atomic - An open-source AI scheduler to solve your time problems</h1>
