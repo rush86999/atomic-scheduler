@@ -1,7 +1,4 @@
 
-* <<run,Run the application>>
-* <<package,Run the packaged application>>
-* <<cloud,Host it in the cloud>>
 * <<native,Run it native>>
 
 [[run]]
