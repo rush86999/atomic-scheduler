@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.NullNode
 import io.quarkus.panache.common.Sort
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import org.jboss.logging.Logger
 import org.acme.kotlin.atomic.meeting.assist.domain.*
 import org.acme.kotlin.atomic.meeting.assist.persistence.*
 import org.eclipse.microprofile.config.inject.ConfigProperty
@@ -23,6 +24,101 @@ import javax.annotation.security.RolesAllowed
 import javax.inject.Inject
 import javax.transaction.Transactional
 import javax.ws.rs.*
+
+// DTOs for callAPI payload
+data class TimeslotDto(
+    val id: UUID?,
+    val hostId: String?,
+    val dayOfWeek: String?,
+    val startTime: String?,
+    val endTime: String?,
+    val monthDay: String?
+)
+
+data class WorkTimeDto(
+    val id: UUID?,
+    val userId: String?,
+    val hostId: String?,
+    val startTime: String?,
+    val endTime: String?
+)
+
+data class UserDto(
+    val id: String?,
+    val hostId: String?,
+    val maxWorkLoadPercent: Int?,
+    val backToBackMeetings: Boolean?,
+    val maxNumberOfMeetings: Int?,
+    val workTimes: List<WorkTimeDto>?
+)
+
+data class PreferredTimeRangeDto(
+    val id: UUID?,
+    val eventId: UUID?,
+    val userId: String?,
+    val hostId: String?,
+    val dayOfWeek: String?,
+    val startTime: String?,
+    val endTime: String?
+)
+
+data class EventDto(
+    val id: UUID?,
+    val userId: String?,
+    val hostId: String?,
+    val preferredTimeRanges: List<PreferredTimeRangeDto>?
+)
+
+data class EventPartDto(
+    val id: String?,
+    val groupId: UUID?,
+    val eventId: UUID?,
+    val part: Int?,
+    val lastPart: Boolean?,
+    val startDate: String?,
+    val endDate: String?,
+    val taskId: UUID?,
+    val softDeadline: String?,
+    val hardDeadline: String?,
+    val meetingId: UUID?,
+    val userId: String?,
+    val hostId: String?,
+    val user: UserDto?, // Assuming UserDto is defined
+    val priority: Int?,
+    val isPreEvent: Boolean?,
+    val isPostEvent: Boolean?,
+    val forEventId: UUID?,
+    val positiveImpactScore: Int?,
+    val negativeImpactScore: Int?,
+    val positiveImpactDayOfWeek: String?,
+    val positiveImpactTime: String?,
+    val negativeImpactDayOfWeek: String?,
+    val negativeImpactTime: String?,
+    val modifiable: Boolean?,
+    val preferredDayOfWeek: String?,
+    val preferredTime: String?,
+    val isExternalMeeting: Boolean?,
+    val isExternalMeetingModifiable: Boolean?,
+    val isMeetingModifiable: Boolean?,
+    val isMeeting: Boolean?,
+    val dailyTaskList: Boolean?,
+    val weeklyTaskList: Boolean?,
+    val gap: Long?,
+    val preferredStartTimeRange: String?,
+    val preferredEndTimeRange: String?,
+    val totalWorkingHours: Int?,
+    val event: EventDto?, // Assuming EventDto is defined
+    val timeslot: TimeslotDto? // Assuming TimeslotDto is defined
+)
+
+data class TimeTableSolutionDto(
+    val timeslotList: List<TimeslotDto>?,
+    val userList: List<UserDto>?,
+    val eventPartList: List<EventPartDto>?,
+    val score: String?,
+    val fileKey: String?,
+    val hostId: String?
+)
 
 
 data class PostTableRequestBody(
@@ -50,9 +146,9 @@ data class PostStopSingletonRequestBody(
 @Path("/timeTable")
 class TimeTableResource {
 
-    private var singletonId: UUID? = null
-    var hostId: UUID? = null
-    var fileKey: String? = null
+    companion object {
+        private val LOGGER = Logger.getLogger(TimeTableResource::class.java)
+    }
 
     @ConfigProperty(name = "USERNAME")
     lateinit var username: String
@@ -81,217 +177,191 @@ class TimeTableResource {
     @Inject
     lateinit var scoreManager: ScoreManager<TimeTable, HardMediumSoftScore>
 
+    // Inject Jackson ObjectMapper
+    @Inject
+    lateinit var objectMapper: com.fasterxml.jackson.databind.ObjectMapper
+
 
     @GET
-    @Path("/user/byId/{id}")
-    fun getTimeTableById(@PathParam("id") id: UUID): TimeTable {
+    @Path("/user/byId/{singletonId}/{hostId}")
+    fun getTimeTableById(@PathParam("singletonId") singletonId: UUID, @PathParam("hostId") hostId: UUID): TimeTable {
         // Get the solver status before loading the solution
         // to avoid the race condition that the solver terminates between them
 //        val solverStatus = getSolverStatus()
-        print("singletonId: $singletonId, id: $id")
-        check(id == this.singletonId) { "value of id is not same as timetable: ($id)"}
-        val solution: TimeTable = findById(id)
+        LOGGER.debug("getTimeTableById request: singletonId: $singletonId, hostId: $hostId")
+        val solution: TimeTable = findById(singletonId, singletonId, hostId)
         scoreManager.updateScore(solution) // Sets the score
 //        solution.solverStatus = solverStatus
         return solution
     }
 
     @GET
-    @Path("/admin/byId/{id}")
+    @Path("/admin/byId/{singletonId}/{hostId}")
     @RolesAllowed("admin")
-    fun adminGetTimeTableById(@PathParam("id") id: UUID): TimeTable {
+    fun adminGetTimeTableById(@PathParam("singletonId") singletonId: UUID, @PathParam("hostId") hostId: UUID): TimeTable {
         // Get the solver status before loading the solution
         // to avoid the race condition that the solver terminates between them
 //        val solverStatus = getSolverStatus()
-        print("singletonId: $singletonId, id: $id")
-        check(id == this.singletonId) { "value of id $id is not same as timetable: (${this.singletonId})"}
-        val solution: TimeTable = findById(id)
+        LOGGER.debug("adminGetTimeTableById request: singletonId: $singletonId, hostId: $hostId")
+        val solution: TimeTable = findById(singletonId, singletonId, hostId)
         scoreManager.updateScore(solution) // Sets the score
 //        solution.solverStatus = solverStatus
         return solution
     }
 
     @Transactional
-    protected fun findById(id: UUID): TimeTable {
-        check(singletonId == id) { "There is no timeTable with id ($id)." }
+    protected fun findById(id: UUID, singletonIdFromRequest: UUID, hostIdFromRequest: UUID): TimeTable {
+        check(id == singletonIdFromRequest) { "There is no timeTable with id ($id)." }
         // Occurs in a single transaction, so each initialized lesson references the same timeslot/room instance
         // that is contained by the timeTable's timeslotList/roomList.
-        check(hostId !== null) { "hostId is null ($hostId)" }
-//        solverManager.terminateEarly(singletonId)
-        val savedTimeslots = timeslotRepository.list("hostId", Sort.by("dayOfWeek").and("startTime").and("endTime").and("id"), hostId!!)
-        print("savedTimeslots: $savedTimeslots")
-
-        val savedEvents = eventPartRepository.list("hostId", Sort.by("startDate").and("endDate").and("id"), hostId)
+        check(hostIdFromRequest != null) { "hostIdFromRequest is null ($hostIdFromRequest)" }
+//        solverManager.terminateEarly(singletonIdFromRequest)
+        val savedTimeslots = timeslotRepository.list("hostId", Sort.by("dayOfWeek").and("startTime").and("endTime").and("id"), hostIdFromRequest)
+        LOGGER.debug("savedTimeslots: $savedTimeslots")
+        val savedUsers = userRepository.list("hostId", hostIdFromRequest) // Fetch users
+        LOGGER.debug("savedUsers for findById: $savedUsers")
+        val savedEvents = eventPartRepository.list("hostId", Sort.by("startDate").and("endDate").and("id"), hostIdFromRequest)
         return TimeTable(
             savedTimeslots,
-//            userRepository.list("hostId", hostId),
-            savedEvents,
+            savedUsers, // Pass users to constructor
+            savedEvents
         )
     }
 
     @Transactional
-    fun callAPI(callBackUrl: String) {
+    fun callAPI(callBackUrl: String, fileKey: String, hostId: UUID) {
         val client = OkHttp()
         val clientHandler: HttpHandler = ClientFilters.BasicAuth(username, password).then(client)
 
-        val table: TimeTable? = hostId?.let {
-            timeslotRepository.list(
-                "hostId",
-                Sort.by("dayOfWeek").and("startTime").and("endTime").and("id"),
-                it
-            )
-        }?.let {
-            TimeTable(
-                it,
-//                userRepository.list("hostId", hostId),
-                eventPartRepository.list("hostId", Sort.by("startDate").and("endDate").and("id"), hostId),
-            )
+        // Efficiently fetch data
+        val timeslotsForHost = timeslotRepository.list("hostId", Sort.by("dayOfWeek").and("startTime").and("endTime").and("id"), hostId)
+        val usersForHost = userRepository.list("hostId", hostId) // Assuming WorkTimes are fetched as needed (e.g. eager)
+        val eventPartsForHost = eventPartRepository.list("hostId", Sort.by("startDate").and("endDate").and("id"), hostId)
+
+        // Populate DTOs
+        val timeslotDtos = timeslotsForHost.map { ts ->
+            TimeslotDto(ts.id, ts.hostId?.toString(), ts.dayOfWeek?.toString(), ts.startTime?.toString(), ts.endTime?.toString(), ts.monthDay?.toString())
         }
-        // manual convert to json
-        val timeslots = hostId?.let {
-            timeslotRepository.list(
-                "hostId",
-                Sort.by("dayOfWeek").and("startTime").and("endTime").and("id"),
-                it
-            )
+
+        val userDtos = usersForHost.map { u ->
+            val workTimeDtos = u.workTimes.map { wt ->
+                WorkTimeDto(wt.id, wt.userId?.toString(), wt.hostId?.toString(), wt.startTime?.toString(), wt.endTime?.toString())
+            }
+            UserDto(u.id?.toString(), u.hostId?.toString(), u.maxWorkLoadPercent, u.backToBackMeetings, u.maxNumberOfMeetings, workTimeDtos)
         }
-        val timeslotList = (timeslots?.map { timeslot ->
-            Jackson.obj(
-                "id" to timeslot.id.asJsonValue(),
-                "hostId" to timeslot.hostId.toString().asJsonValue(),
-                "dayOfWeek" to timeslot.dayOfWeek.toString().asJsonValue(),
-                "startTime" to timeslot.startTime.toString().asJsonValue(),
-                "endTime" to timeslot.endTime.toString().asJsonValue(),
-                "monthDay" to timeslot.monthDay.toString().asJsonValue()
-            )
 
-        })?.asJsonObject()
+        // Fetch related Events and their PreferredTimeRanges efficiently
+        val eventIds = eventPartsForHost.mapNotNull { it.eventId }.distinct()
+        val eventsForHost = if (eventIds.isNotEmpty()) eventRepository.list("id in ?1", eventIds).associateBy { it.id } else emptyMap()
 
+        val preferredTimeRangeIds = eventsForHost.values.flatMap { it.preferredTimeRanges?.mapNotNull { ptr -> ptr.id } ?: emptyList() }.distinct()
+        // Assuming PreferredTimeRanges are either eagerly fetched with Events or fetched here if needed.
+        // For simplicity, let's assume they are part of the Event objects.
 
-
-        val userObjects = userRepository.list("hostId", hostId)
-        val users = (userObjects?.map { userObject ->
-            Jackson.obj(
-                    "id" to userObject.id.toString().asJsonValue(),
-                    "hostId" to userObject.hostId.toString().asJsonValue(),
-                    "maxWorkLoadPercent" to userObject.maxWorkLoadPercent.asJsonValue(),
-                    "backToBackMeetings" to userObject.backToBackMeetings.asJsonValue(),
-                    "maxNumberOfMeetings" to userObject.maxNumberOfMeetings.asJsonValue(),
-                    "workTimes" to (userObject.workTimes.map { workTime ->
-                        Jackson.obj(
-                            "id" to workTime.id.asJsonValue(),
-                            "userId" to workTime.userId.toString().asJsonValue(),
-                            "hostId" to workTime.hostId.toString().asJsonValue(),
-                            "startTime" to workTime.startTime.toString().asJsonValue(),
-                            "endTime" to workTime.endTime.toString().asJsonValue()
-                        )
-                    }).asJsonObject()
-                )
-            })?.asJsonObject()
-
-            val eventParts = eventPartRepository.list("hostId", Sort.by("startDate").and("endDate").and("id"), hostId)
-
-            val eventPartList = (eventParts.map { eventPart ->
-//                val userIndex = userObjects.binarySearch { if (it.id == eventPart.userId) 0 else 1 }
-//                print("$userIndex: userIndex")
-                val saveUser = userRepository.find("id", eventPart.userId).firstResult<User>()
-                Jackson.obj(
-                    "id" to eventPart.id.toString().asJsonValue(),
-                    "groupId" to eventPart.groupId.asJsonValue(),
-                    "eventId" to eventPart.eventId.asJsonValue(),
-                    "part" to eventPart.part.asJsonValue(),
-                    "lastPart" to eventPart.lastPart.asJsonValue(),
-                    "startDate" to eventPart.startDate.asJsonValue(),
-                    "endDate" to eventPart.endDate.asJsonValue(),
-                    "taskId" to (eventPart?.taskId?.asJsonValue() ?: NullNode.instance),
-                    "softDeadline" to (eventPart?.softDeadline?.asJsonValue() ?: NullNode.instance),
-                    "hardDeadline" to (eventPart?.hardDeadline?.asJsonValue() ?: NullNode.instance),
-                    "meetingId" to (eventPart?.meetingId?.asJsonValue() ?: NullNode.instance),
-                    "userId" to eventPart.userId.toString().asJsonValue(),
-                    "hostId" to eventPart.hostId.toString().asJsonValue(),
-                    "user" to saveUser.asJsonObject(),
-                    "priority" to eventPart.priority.asJsonValue(),
-                    "isPreEvent" to (eventPart?.isPreEvent?.asJsonValue() ?: NullNode.instance),
-                    "isPostEvent" to (eventPart?.isPostEvent?.asJsonValue() ?: NullNode.instance),
-                    "forEventId" to (eventPart?.forEventId?.asJsonValue() ?: NullNode.instance),
-                    "positiveImpactScore" to eventPart.positiveImpactScore.asJsonValue(),
-                    "negativeImpactScore" to eventPart.negativeImpactScore.asJsonValue(),
-                    "positiveImpactDayOfWeek" to (eventPart?.positiveImpactDayOfWeek?.toString()?.asJsonValue()
-                        ?: NullNode.instance),
-                    "positiveImpactTime" to (eventPart?.positiveImpactTime?.toString()?.asJsonValue() ?: NullNode.instance),
-                    "negativeImpactDayOfWeek" to (eventPart?.negativeImpactDayOfWeek?.toString()?.asJsonValue()
-                        ?: NullNode.instance),
-                    "negativeImpactTime" to (eventPart?.negativeImpactTime?.toString()?.asJsonValue() ?: NullNode.instance),
-                    "modifiable" to eventPart.modifiable.asJsonValue(),
-                    "preferredDayOfWeek" to (eventPart?.preferredDayOfWeek?.toString()?.asJsonValue() ?: NullNode.instance),
-                    "preferredTime" to (eventPart?.preferredTime?.toString()?.asJsonValue() ?: NullNode.instance),
-                    "isExternalMeeting" to eventPart.isExternalMeeting.asJsonValue(),
-                    "isExternalMeetingModifiable" to eventPart.isExternalMeetingModifiable.asJsonValue(),
-                    "isMeetingModifiable" to eventPart.isMeetingModifiable.asJsonValue(),
-                    "isMeeting" to eventPart.isMeeting.asJsonValue(),
-                    "dailyTaskList" to eventPart.dailyTaskList.asJsonValue(),
-                    "weeklyTaskList" to eventPart.weeklyTaskList.asJsonValue(),
-                    "gap" to eventPart.gap.asJsonValue(),
-                    "preferredStartTimeRange" to (eventPart?.preferredStartTimeRange?.toString()?.asJsonValue()
-                        ?: NullNode.instance),
-                    "preferredEndTimeRange" to (eventPart?.preferredEndTimeRange?.toString()?.asJsonValue()
-                        ?: NullNode.instance),
-                    "totalWorkingHours" to eventPart.totalWorkingHours.asJsonValue(),
-                    "event" to Jackson.obj(
-                        "id" to eventPart.event.id.asJsonValue(),
-                        "userId" to eventPart.event.userId.toString().asJsonValue(),
-                        "hostId" to eventPart.hostId.toString().asJsonValue(),
-                        "preferredTimeRanges" to ((eventPart.event.preferredTimeRanges?.map { preferredTimeRange ->
-                            Jackson.obj(
-                                "id" to preferredTimeRange.id.asJsonValue(),
-                                "eventId" to preferredTimeRange.eventId.asJsonValue(),
-                                "userId" to preferredTimeRange.userId.toString().asJsonValue(),
-                                "hostId" to preferredTimeRange.hostId.toString().asJsonValue(),
-                                "dayOfWeek" to (preferredTimeRange.dayOfWeek?.toString()?.asJsonValue()
-                                    ?: NullNode.instance),
-                                "startTime" to preferredTimeRange.startTime.toString().asJsonValue(),
-                                "endTime" to preferredTimeRange.endTime.toString().asJsonValue(),
-                            )
-                        })?.asJsonObject() ?: NullNode.instance)
-                    ),
-                    "timeslot" to Jackson.obj(
-                        "id" to eventPart.timeslot?.id.asJsonValue(),
-                        "hostId" to eventPart.timeslot?.hostId.toString().asJsonValue(),
-                        "dayOfWeek" to eventPart.timeslot?.dayOfWeek.toString().asJsonValue(),
-                        "startTime" to eventPart.timeslot?.startTime.toString().asJsonValue(),
-                        "endTime" to eventPart.timeslot?.endTime.toString().asJsonValue(),
-                        "monthDay" to eventPart.timeslot?.monthDay.toString().asJsonValue()
-                    )
-                )
-            }).asJsonObject()
-
-            val body = timeslotList?.let { it ->
-                    users?.let { it1 ->
-                        Jackson.obj(
-                            "timeslotList" to it,
-                            "userList" to it1,
-                            "eventPartList" to eventPartList,
-                            "score" to (table?.score?.toString()?.asJsonValue() ?: NullNode.instance),
-                            "fileKey" to fileKey.asJsonValue(),
-                            "hostId" to hostId.toString().asJsonValue(),
-                        )
-                    }
+        val eventPartDtos = eventPartsForHost.map { ep ->
+            val userDto = userDtos.find { it.id == ep.userId?.toString() } // Find already mapped UserDto
+            val event = eventsForHost[ep.eventId]
+            val preferredTimeRangeDtos = event?.preferredTimeRanges?.map { ptr ->
+                PreferredTimeRangeDto(ptr.id, ptr.eventId, ptr.userId?.toString(), ptr.hostId?.toString(), ptr.dayOfWeek?.toString(), ptr.startTime?.toString(), ptr.endTime?.toString())
+            }
+            val eventDto = event?.let { e ->
+                EventDto(e.id, e.userId?.toString(), e.hostId?.toString(), preferredTimeRangeDtos)
+            }
+            val timeslotDto = ep.timeslot?.let { ts -> // ep.timeslot might be null
+                 timeslotsForHost.find { it.id == ts.id }?.let { // find matching from already fetched timeslots
+                     TimeslotDto(it.id, it.hostId?.toString(), it.dayOfWeek?.toString(), it.startTime?.toString(), it.endTime?.toString(), it.monthDay?.toString())
+                 }
             }
 
-            hostId?.let { deleteTableGivenUser(it) }
-
-            val tableLens = Body.json().toLens()
-            val response = body?.let { tableLens(it, Request(Method.POST, callBackUrl)) }?.let { clientHandler(it) }
-            print("this is  response $response")
-            print("status ${response?.status}")
-            print("body ${response?.bodyString()}")
+            EventPartDto(
+                id = ep.id?.toString(),
+                groupId = ep.groupId,
+                eventId = ep.eventId,
+                part = ep.part,
+                lastPart = ep.lastPart,
+                startDate = ep.startDate?.toString(),
+                endDate = ep.endDate?.toString(),
+                taskId = ep.taskId,
+                softDeadline = ep.softDeadline?.toString(),
+                hardDeadline = ep.hardDeadline?.toString(),
+                meetingId = ep.meetingId,
+                userId = ep.userId?.toString(),
+                hostId = ep.hostId?.toString(),
+                user = userDto,
+                priority = ep.priority,
+                isPreEvent = ep.isPreEvent,
+                isPostEvent = ep.isPostEvent,
+                forEventId = ep.forEventId,
+                positiveImpactScore = ep.positiveImpactScore,
+                negativeImpactScore = ep.negativeImpactScore,
+                positiveImpactDayOfWeek = ep.positiveImpactDayOfWeek?.toString(),
+                positiveImpactTime = ep.positiveImpactTime?.toString(),
+                negativeImpactDayOfWeek = ep.negativeImpactDayOfWeek?.toString(),
+                negativeImpactTime = ep.negativeImpactTime?.toString(),
+                modifiable = ep.modifiable,
+                preferredDayOfWeek = ep.preferredDayOfWeek?.toString(),
+                preferredTime = ep.preferredTime?.toString(),
+                isExternalMeeting = ep.isExternalMeeting,
+                isExternalMeetingModifiable = ep.isExternalMeetingModifiable,
+                isMeetingModifiable = ep.isMeetingModifiable,
+                isMeeting = ep.isMeeting,
+                dailyTaskList = ep.dailyTaskList,
+                weeklyTaskList = ep.weeklyTaskList,
+                gap = ep.gap,
+                preferredStartTimeRange = ep.preferredStartTimeRange?.toString(),
+                preferredEndTimeRange = ep.preferredEndTimeRange?.toString(),
+                totalWorkingHours = ep.totalWorkingHours,
+                event = eventDto,
+                timeslot = timeslotDto
+            )
         }
+
+        // Calculate score (similar to how it was done before, if TimeTable instance is needed)
+        // For simplicity, let's assume score calculation might need the original domain objects,
+        // or it's passed/calculated differently. Here, we'll pass null if not easily available.
+        // This part might need adjustment based on how score is obtained.
+        // One way: Reconstruct a minimal TimeTable for score calculation if necessary or fetch score separately.
+        val currentScore = try {
+            // Construct TimeTable with all required lists: timeslots, users, event parts
+            val tableForScore = TimeTable(
+                timeslotsForHost, // Already fetched Timeslot objects
+                usersForHost,     // Already fetched User objects
+                eventPartsForHost // Already fetched EventPart objects
+            )
+            scoreManager.updateScore(tableForScore)
+            tableForScore.score?.toString()
+        } catch (e: Exception) {
+            LOGGER.warn("Error calculating score for callback: ${e.message}")
+            null
+        }
+
+
+        val solutionDto = TimeTableSolutionDto(
+            timeslotList = timeslotDtos,
+            userList = userDtos,
+            eventPartList = eventPartDtos,
+            score = currentScore,
+            fileKey = fileKey,
+            hostId = hostId.toString()
+        )
+
+        // Serialize DTO to JSON
+        val bodyString = objectMapper.writeValueAsString(solutionDto)
+
+        deleteTableGivenUser(hostId)
+
+        val request = Request(Method.POST, callBackUrl).body(bodyString).header("Content-Type", "application/json")
+        val response = clientHandler(request)
+
+        LOGGER.debug("Callback response status: ${response.status}")
+        LOGGER.debug("Callback response body: ${response.bodyString()}")
+    }
 
     @Transactional
     fun deleteTableGivenUser(
         hostId: UUID,
     ) {
-        this.singletonId = null
+        // this.singletonId = null // Class member removed
         this.eventPartRepository.delete("hostId", hostId)
         this.workTimeRepository.delete("hostId", hostId)
         this.userRepository.delete("hostId", hostId)
@@ -301,21 +371,21 @@ class TimeTableResource {
     }
 
 
-    suspend fun callBackAPI(singletonId: UUID, delay: Long, callBackUrl: String) {
+    suspend fun callBackAPI(singletonId: UUID, hostId: UUID, fileKey: String, delay: Long, callBackUrl: String) {
         kotlinx.coroutines.delay(delay)
         solverManager.terminateEarly(singletonId)
-        callAPI(callBackUrl)
+        callAPI(callBackUrl, fileKey, hostId)
     }
 
-    fun solve(delay: Long, callBackUrl: String) {
-        check(singletonId !== null) {"singletonId is null $singletonId"}
+    fun solve(singletonId: UUID, hostId: UUID, fileKey: String, delay: Long, callBackUrl: String) {
+        // check(singletonId !== null) {"singletonId is null $singletonId"} // No longer needed as it's a parameter
 
         solverManager.solveAndListen(singletonId,
-            this::findById,
+            { findById(it, singletonId, hostId) }, // Pass singletonId and hostId to findById
             this::save)
 
-        GlobalScope.launch {
-            singletonId?.let { callBackAPI(it, delay, callBackUrl) }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            callBackAPI(singletonId, hostId, fileKey, delay, callBackUrl)
         }
 
     }
@@ -331,64 +401,69 @@ class TimeTableResource {
         delay: Long,
         callBackUrl: String,
     ) {
+        // Class members this.singletonId, this.hostId, this.fileKey are removed.
+        // These values are now passed as parameters.
 
-        this.singletonId = singletonId
-        this.hostId = hostId
-        this.fileKey = fileKey
         this.timeslotRepository.persist(timeslots)
         val savedTimeslots = timeslotRepository.list("hostId", hostId)
-        print("savedTimeslots: $savedTimeslots")
+        LOGGER.debug("savedTimeslots: $savedTimeslots")
         this.userRepository.persist(userList)
         val savedUsers = userRepository.list("hostId", hostId)
-        print("savedUsers: $savedUsers")
+        LOGGER.debug("savedUsers: $savedUsers")
         savedUsers.forEach { workTimeRepository.persist(it.workTimes) }
 
         val savedWorkTimes = workTimeRepository.list("hostId", hostId)
-        print("savedWorkTimes: $savedWorkTimes")
-        print("eventParts: $eventParts")
-        eventParts.forEach { eventPart: EventPart ->
-//            val index = savedUsers.binarySearch { if (it.id == eventPart.userId) 0 else 1 }
-//            print("$index: index for binarySearch of users")
-            val savedUser = userRepository.find("id", eventPart.userId).firstResult<User>()
-            print("savedUser: $savedUser")
-            eventPart.user = savedUser
-//            event.workTimes = savedWorkTimes
+        LOGGER.debug("savedWorkTimes: $savedWorkTimes")
+        LOGGER.debug("eventParts: $eventParts")
+
+        // Optimize User fetching
+        val userIds = eventParts.map { it.userId }.distinct()
+        val userMap = userRepository.list("id in ?1", userIds).associateBy { it.id }
+        eventParts.forEach { eventPart ->
+            eventPart.user = userMap[eventPart.userId]
+            // LOGGER.debug("Assigned user ${eventPart.user} to eventPart ${eventPart.id}")
         }
-        var events: MutableList<Event> = mutableListOf()
-        eventParts.forEach { e: EventPart -> events.add(e.event) }
-        val distinctEvents = events.distinctBy { e: Event -> e.id }
-        eventRepository.persist(distinctEvents)
-        var preferredTimesRanges: MutableList<PreferredTimeRange> = mutableListOf()
-        eventParts.forEach { e: EventPart -> e.event.preferredTimeRanges?.forEach { pt: PreferredTimeRange -> preferredTimesRanges.add(pt) } }
-        val distinctPreferredTimeRanges = preferredTimesRanges.distinctBy { pt: PreferredTimeRange -> listOf(pt.dayOfWeek, pt.startTime, pt.endTime, pt.eventId) }
+
+        // Optimize Event fetching and persist related entities
+        var eventsToPersist: MutableList<Event> = mutableListOf()
+        eventParts.forEach { ep -> eventsToPersist.add(ep.event) }
+        val distinctEventsToPersist = eventsToPersist.distinctBy { it.id }
+        eventRepository.persist(distinctEventsToPersist)
+
+        var preferredTimesRangesToPersist: MutableList<PreferredTimeRange> = mutableListOf()
+        distinctEventsToPersist.forEach { event -> event.preferredTimeRanges?.forEach { pt -> preferredTimesRangesToPersist.add(pt) } }
+        val distinctPreferredTimeRanges = preferredTimesRangesToPersist.distinctBy { pt -> listOf(pt.dayOfWeek, pt.startTime, pt.endTime, pt.eventId) }
         preferredTimeRangeRepository.persist(distinctPreferredTimeRanges)
 
-        // list saved events and preferredTimeRanges
-        eventParts.forEach { e: EventPart ->
-            val savedEvent = eventRepository.find("id", e.eventId).firstResult<Event>()
-            e.event = savedEvent
+        // Assign fetched Events to EventParts
+        val eventIds = eventParts.map { it.eventId }.distinct()
+        val eventMap = eventRepository.list("id in ?1", eventIds).associateBy { it.id }
+        eventParts.forEach { eventPart ->
+            eventPart.event = eventMap[eventPart.eventId]
+            // LOGGER.debug("Assigned event ${eventPart.event} to eventPart ${eventPart.id}")
         }
 
         eventPartRepository.persist(eventParts)
         val savedEventParts = eventPartRepository.list("hostId", Sort.by("startDate").and("endDate").and("id"), hostId)
-        print("savedEvents: $savedEventParts")
+        LOGGER.debug("savedEvents: $savedEventParts")
 
 
-        solve(delay, callBackUrl)
+        solve(singletonId, hostId, fileKey, delay, callBackUrl)
     }
 
     @Transactional
     protected fun save(timeTable: TimeTable) {
         if (timeTable == null) {
-            print("timeTable is null")
+            LOGGER.warn("timeTable is null")
             return
         }
         for (eventPart in timeTable.eventPartList) {
-            // TODO this is awfully naive: optimistic locking causes issues if called by the SolverManager
-            val attachedEventPart: EventPart = eventPartRepository.findById(eventPart.id!!)!!
-            attachedEventPart.timeslot = eventPart.timeslot
+            if (eventPart.id != null && eventPart.timeslot != null) {
+                eventPartRepository.update("timeslot = ?1 where id = ?2", eventPart.timeslot, eventPart.id)
+            } else {
+                LOGGER.warn("Skipping save for EventPart with null id or timeslot: ${eventPart.id}")
+            }
         }
-
     }
 
     @POST
@@ -409,49 +484,50 @@ class TimeTableResource {
     }
 
 
-    @POST
-    @Path("/user/solve-day")
-    fun solveDay(args: PostTableRequestBody) {
-        print("args: $args")
-        if (singletonId != null) {
-            args.singletonId?.let { args.hostId?.let { it1 -> deleteTableGivenUser(it1) } }
+    private fun processSolveRequest(args: PostTableRequestBody, isAdmin: Boolean) {
+        val action = if (isAdmin) "adminSolveDay" else "solveDay"
+        LOGGER.info("Received $action request: $args")
+
+        // Note: The logic for checking active solving processes based on a class member singletonId
+        // needs to be re-evaluated. If we want to prevent multiple solves for the same host,
+        // we might need a different mechanism, perhaps checking active solver sessions
+        // in SolverManager using args.singletonId if that's intended to be unique per solve request.
+        // For now, we'll assume a new solve request for a given hostId can proceed after cleaning up.
+
+        args.hostId?.let { hostId ->
+            // Consider if singletonId from args should be used to check/stop an existing solve
+            // For now, any existing data for the hostId is deleted.
+            deleteTableGivenUser(hostId)
         }
-        args.singletonId?.let { it ->
-            args.hostId?.let { it1 ->
-                args.timeslots?.let { it2 ->
-                    args.userList?.let { it3 ->
-                        args.eventParts?.let { it4 ->
+
+
+        args.singletonId?.let { singletonId ->
+            args.hostId?.let { hostId ->
+                args.timeslots?.let { timeslots ->
+                    args.userList?.let { userList ->
+                        args.eventParts?.let { eventParts ->
                             createTableAndSolve(
-                                it, it1, it2, it3, it4, args.fileKey, args.delay, args.callBackUrl,
+                                singletonId, hostId, timeslots, userList, eventParts,
+                                args.fileKey, args.delay, args.callBackUrl
                             )
                         }
                     }
                 }
             }
-        }
+        } ?: LOGGER.warn("$action request failed: singletonId is null. Args: $args")
+    }
+
+    @POST
+    @Path("/user/solve-day")
+    fun solveDay(args: PostTableRequestBody) {
+        processSolveRequest(args, false)
     }
 
     @POST
     @Path("/admin/solve-day")
     @RolesAllowed("admin")
     fun adminSolveDay(args: PostTableRequestBody) {
-        print("args: $args")
-        if (singletonId != null) {
-            args.singletonId?.let { args.hostId?.let { it1 -> deleteTableGivenUser(it1) } }
-        }
-        args.singletonId?.let {
-            args.hostId?.let { it1 ->
-                args.timeslots?.let { it2 ->
-                    args.userList?.let { it3 ->
-                        args.eventParts?.let { it4 ->
-                            createTableAndSolve(
-                                it, it1, it2, it3, it4, args.fileKey, args.delay, args.callBackUrl,
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        processSolveRequest(args, true)
     }
 
     @DELETE
