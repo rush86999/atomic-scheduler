@@ -16,8 +16,8 @@ class TimeTable {
     @ValueRangeProvider(id = "timeslotRange")
     lateinit var timeslotList: List<Timeslot>
 
-//    @ProblemFactCollectionProperty
-//    lateinit var userList: List<User>
+    @ProblemFactCollectionProperty
+    lateinit var userList: List<User>
 
     @PlanningEntityCollectionProperty
     lateinit var eventPartList: List<EventPart>
@@ -31,9 +31,9 @@ class TimeTable {
     // No-arg constructor required for OptaPlanner
     constructor() {}
 
-    constructor(timeslotList: List<Timeslot>, eventPartList: List<EventPart>) {
+    constructor(timeslotList: List<Timeslot>, userList: List<User>, eventPartList: List<EventPart>) {
         this.timeslotList = timeslotList
-//        this.userList = userList
+        this.userList = userList
         this.eventPartList = eventPartList
     }
 
