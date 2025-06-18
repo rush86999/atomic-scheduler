@@ -8,6 +8,7 @@ import org.acme.kotlin.atomic.meeting.assist.domain.User
 import org.acme.kotlin.atomic.meeting.assist.domain.WorkTime
 import org.acme.kotlin.atomic.meeting.assist.domain.PreferredTimeRange
 // import org.acme.kotlin.atomic.meeting.assist.domain.MonthDayDescriptor // Not used
+import org.acme.kotlin.atomic.meeting.assist.domain.EventType
 
 import org.optaplanner.test.api.score.stream.ConstraintVerifier
 import org.junit.jupiter.api.Test
@@ -83,12 +84,13 @@ class TimeTableConstraintProviderTest {
     }
 
     // Helper function to create an Event
-    private fun createEvent(userId: UUID, eventId: UUID = UUID.randomUUID()): Event {
+    private fun createEvent(userId: UUID, eventId: UUID = UUID.randomUUID(), eventType: org.acme.kotlin.atomic.meeting.assist.domain.EventType = org.acme.kotlin.atomic.meeting.assist.domain.EventType.TASK): Event {
         val event = Event()
-        event.id = eventId
+        event.id = eventId.toString() // Ensure ID is string if Event.id is String
         event.userId = userId
         event.hostId = DEMO_HOST_ID
-        event.name = "Test Event $eventId"
+        // event.name = "Test Event $eventId" // Name field might not exist or not be needed for tests
+        event.eventType = eventType
         return event
     }
 
@@ -2026,5 +2028,174 @@ class TimeTableConstraintProviderTest {
         constraintVerifier.verifyThat(TimeTableConstraintProvider::notEqualStartDateForNonTaskSoftPenalize)
             .given(eventPart)
             .rewardsWith(0)
+    }
+
+    // --- Tests for taskWithinWorkingHours ---
+    @Test
+    fun taskWithinWorkingHours_taskOutsideWorkHours_penalizes() {
+        val user1 = createUser()
+        createWorkTime(user1, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0)) // Work 9-17
+
+        val taskEvent = createEvent(user1.id!!, eventType = EventType.TASK)
+        // Task scheduled 8:00-9:00, but work starts at 9:00
+        val timeslotOutside = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(8, 0), LocalTime.of(9, 0))
+        val taskPartOutside = createEventPart(user1, taskEvent, timeslotOutside)
+
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::taskWithinWorkingHours)
+            .given(taskPartOutside)
+            .penalizesBy(1)
+    }
+
+    @Test
+    fun taskWithinWorkingHours_taskInsideWorkHours_noPenalty() {
+        val user1 = createUser()
+        createWorkTime(user1, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0)) // Work 9-17
+
+        val taskEvent = createEvent(user1.id!!, eventType = EventType.TASK)
+        // Task scheduled 10:00-11:00, within work hours
+        val timeslotInside = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(10, 0), LocalTime.of(11, 0))
+        val taskPartInside = createEventPart(user1, taskEvent, timeslotInside)
+
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::taskWithinWorkingHours)
+            .given(taskPartInside)
+            .rewardsWith(0)
+    }
+
+    @Test
+    fun taskWithinWorkingHours_nonTaskOutsideWorkHours_noPenaltyByThisConstraint() {
+        val user1 = createUser()
+        createWorkTime(user1, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0)) // Work 9-17
+
+        // Use a MEETING event type, which should not be penalized by taskWithinWorkingHours
+        val meetingEvent = createEvent(user1.id!!, eventType = EventType.ONE_ON_ONE_MEETING)
+        val timeslotOutside = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(8, 0), LocalTime.of(9, 0))
+        val nonTaskPartOutside = createEventPart(user1, meetingEvent, timeslotOutside)
+
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::taskWithinWorkingHours)
+            .given(nonTaskPartOutside)
+            .rewardsWith(0) // This specific constraint should not penalize non-tasks
+    }
+
+    @Test
+    fun taskWithinWorkingHours_taskSpansEndOfWork_penalizes() {
+        val user1 = createUser()
+        createWorkTime(user1, DayOfWeek.MONDAY, LocalTime.of(9, 0), LocalTime.of(17, 0)) // Work 9-17
+
+        val taskEvent = createEvent(user1.id!!, eventType = EventType.TASK)
+        // Task scheduled 16:30-17:30, but work ends at 17:00
+        val timeslotSpanningEnd = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(16, 30), LocalTime.of(17, 30))
+        val taskPartSpanning = createEventPart(user1, taskEvent, timeslotSpanningEnd)
+
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::taskWithinWorkingHours)
+            .given(taskPartSpanning)
+            .penalizesBy(1)
+    }
+
+    @Test
+    fun taskWithinWorkingHours_taskNoWorkTimeDefinedForDay_penalizes() {
+        val user1 = createUser()
+        // No work time defined for Monday for user1
+
+        val taskEvent = createEvent(user1.id!!, eventType = EventType.TASK)
+        val timeslotOnMonday = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(10, 0), LocalTime.of(11, 0))
+        val taskPart = createEventPart(user1, taskEvent, timeslotOnMonday)
+
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::taskWithinWorkingHours)
+            .given(taskPart)
+            .penalizesBy(1) // Should penalize as workTime will be null
+    }
+
+    // --- Tests for prioritizeTasksWithEarlierDeadlines ---
+    @Test
+    fun prioritizeTasksWithEarlierDeadlines_taskWithDeadline_penalizesBasedOnProximity() {
+        val user1 = createUser()
+        val taskEvent = createEvent(user1.id!!, eventType = EventType.TASK)
+
+        // Deadline is Jan 16th, 2024, 9:00 AM. Task scheduled Jan 15th, 9:00 AM (24 hours before)
+        val scheduleDate = LocalDate.of(2024, 1, 15)
+        val deadlineDateTimeStr = "2024-01-16T09:00:00"
+        val timeslot = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(9,0), LocalTime.of(10,0), scheduleDate)
+        val eventPart = createEventPart(user1, taskEvent, timeslot,
+                                        hardDeadlineString = deadlineDateTimeStr,
+                                        startDateString = "2024-01-15T09:00:00",
+                                        endDateString = "2024-01-15T10:00:00")
+
+        // Penalty logic is 100 / hoursToDeadline. Here, 24 hours. 100/24 = 4 (integer division)
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::prioritizeTasksWithEarlierDeadlines)
+            .given(eventPart)
+            .penalizesBy(4)
+    }
+
+    @Test
+    fun prioritizeTasksWithEarlierDeadlines_taskVeryCloseToDeadline_higherPenalty() {
+        val user1 = createUser()
+        val taskEvent = createEvent(user1.id!!, eventType = EventType.TASK)
+
+        // Deadline is Jan 15th, 10:00 AM. Task scheduled Jan 15th, 9:00 AM (1 hour before)
+        val scheduleDate = LocalDate.of(2024, 1, 15)
+        val deadlineDateTimeStr = "2024-01-15T10:00:00"
+        val timeslot = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(9,0), LocalTime.of(10,0), scheduleDate)
+        val eventPart = createEventPart(user1, taskEvent, timeslot,
+                                        hardDeadlineString = deadlineDateTimeStr,
+                                        startDateString = "2024-01-15T09:00:00",
+                                        endDateString = "2024-01-15T10:00:00")
+
+        // Penalty: 100 / 1 = 100
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::prioritizeTasksWithEarlierDeadlines)
+            .given(eventPart)
+            .penalizesBy(100)
+    }
+
+    @Test
+    fun prioritizeTasksWithEarlierDeadlines_taskScheduledAfterDeadline_highFixedPenalty() {
+        // This scenario should ideally be caught by hardDeadlineConflictHardPenalize,
+        // but this tests the specific penalty logic in prioritizeTasksWithEarlierDeadlines.
+        val user1 = createUser()
+        val taskEvent = createEvent(user1.id!!, eventType = EventType.TASK)
+
+        val scheduleDate = LocalDate.of(2024, 1, 15)
+        val deadlineDateTimeStr = "2024-01-15T09:00:00" // Deadline 9 AM
+        // Task scheduled 10 AM, after deadline
+        val timeslot = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(10,0), LocalTime.of(11,0), scheduleDate)
+        val eventPart = createEventPart(user1, taskEvent, timeslot,
+                                        hardDeadlineString = deadlineDateTimeStr,
+                                        startDateString = "2024-01-15T10:00:00",
+                                        endDateString = "2024-01-15T11:00:00")
+
+        // Penalty logic returns 1000 if durationToDeadline is negative or zero.
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::prioritizeTasksWithEarlierDeadlines)
+            .given(eventPart)
+            .penalizesBy(1000)
+    }
+
+    @Test
+    fun prioritizeTasksWithEarlierDeadlines_nonTaskEvent_noPenalty() {
+        val user1 = createUser()
+        // Event is a MEETING, not a TASK
+        val meetingEvent = createEvent(user1.id!!, eventType = EventType.GROUP_MEETING)
+
+        val scheduleDate = LocalDate.of(2024, 1, 15)
+        val deadlineDateTimeStr = "2024-01-16T09:00:00"
+        val timeslot = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(9,0), LocalTime.of(10,0), scheduleDate)
+        val eventPart = createEventPart(user1, meetingEvent, timeslot, hardDeadlineString = deadlineDateTimeStr)
+
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::prioritizeTasksWithEarlierDeadlines)
+            .given(eventPart)
+            .rewardsWith(0) // No penalty for non-tasks
+    }
+
+    @Test
+    fun prioritizeTasksWithEarlierDeadlines_taskWithoutDeadline_noPenalty() {
+        val user1 = createUser()
+        val taskEvent = createEvent(user1.id!!, eventType = EventType.TASK)
+
+        val scheduleDate = LocalDate.of(2024, 1, 15)
+        val timeslot = createTimeslot(DayOfWeek.MONDAY, LocalTime.of(9,0), LocalTime.of(10,0), scheduleDate)
+        // hardDeadlineString is null
+        val eventPart = createEventPart(user1, taskEvent, timeslot, hardDeadlineString = null)
+
+        constraintVerifier.verifyThat(TimeTableConstraintProvider::prioritizeTasksWithEarlierDeadlines)
+            .given(eventPart)
+            .rewardsWith(0) // No penalty if no hard deadline
     }
 }
