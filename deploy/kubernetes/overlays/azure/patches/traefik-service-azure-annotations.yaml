@@ -1,6 +1,7 @@
 # deploy/kubernetes/overlays/azure/patches/traefik-service-azure-annotations.yaml
 # This patch adds Azure Load Balancer specific annotations to the Traefik service.
-# It assumes the base Traefik service is named 'traefik' and is in the 'traefik-ingress' namespace.
+# It assumes the base Traefik service is named 'traefik' and is in the 'traefik-ingress' namespace,
+# and is of type LoadBalancer.
 
 apiVersion: v1
 kind: Service
@@ -10,62 +11,56 @@ metadata:
   annotations:
     # --- Azure Load Balancer Configuration Annotations ---
 
-    # Specify the SKU for the Azure Load Balancer (Standard is recommended for production)
-    # Basic SKU does not support certain features like availability zones, multiple frontends, or health probes on specific paths.
+    # Specify the SKU for the Azure Load Balancer. "Standard" is recommended for production.
+    # "Basic" SKU has limitations (e.g., no availability zones, no health probes on specific paths).
     service.beta.kubernetes.io/azure-load-balancer-sku: "Standard"
 
-    # Specify if the load balancer is internet-facing or internal
-    # "false" means internet-facing. "true" would make it internal.
+    # Specify if the load balancer is internet-facing or internal.
+    # "false" means internet-facing (public). "true" would make it internal.
     service.beta.kubernetes.io/azure-load-balancer-internal: "false"
 
     # --- Health Probe Configuration ---
-    # Define the request path for the health probe. Traefik has a /ping endpoint.
+    # Define the request path for the health probe. Traefik typically has a /ping endpoint for health checks.
     service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/ping"
 
     # Specify which port on the service the health probe should target.
     # This should be the port number that corresponds to a Traefik entrypoint where /ping is available.
-    # If Traefik's service exposes a port named 'web' (typically port 80) and /ping is accessible there:
-    # service.beta.kubernetes.io/azure-load-balancer-health-probe-port: "80"
-    # Or if the port is named 'traefik' (dashboard/api, typically 8080) and /ping is there:
-    # service.beta.kubernetes.io/azure-load-balancer-health-probe-port: "8080"
-    # For this example, let's assume the 'web' entrypoint (port 80) serves /ping.
-    # Ensure the base Traefik service spec.ports has a port that will eventually map to container port 80.
-    # If the service port is named 'web', you can often just let it default or match.
-    # The actual port number is safer.
-    service.beta.kubernetes.io/azure-load-balancer-health-probe-port: "80" # Assuming /ping is on port 80 of Traefik
+    # Assuming Traefik's 'web' entrypoint (port 80) also serves the /ping endpoint for LB health checks.
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-port: "80"
 
-    # Interval in seconds for health probe (e.g., 5, 15, 30)
-    # service.beta.kubernetes.io/azure-load-balancer-health-probe-interval: "15"
-
-    # Number of consecutive successful probes to mark the backend healthy
-    # service.beta.kubernetes.io/azure-load-balancer-health-probe-num-of-probes: "2"
-
-    # --- Optional: Idle Timeout ---
-    # Configure the idle timeout for TCP connections, in minutes. Default is 4 minutes. Max is 30.
+    # --- Idle Timeout Configuration ---
+    # Configure the idle timeout for TCP and HTTP connections, in minutes. Default is 4 minutes. Max is 30.
     service.beta.kubernetes.io/azure-load-balancer-idle-timeout-in-minutes: "30"
 
     # --- Optional: Use a pre-existing Public IP Address ---
-    # If you have a static public IP address created in Azure that you want to assign to the Load Balancer.
+    # If you have a static public IP address resource created in Azure that you want to assign to the Load Balancer.
+    # The Public IP must be of the same SKU (Standard) and in the same region as the AKS cluster.
+    #
     # 1. Name of the Public IP Address resource in Azure:
     # service.beta.kubernetes.io/azure-pip-name: "your-existing-public-ip-name"
     #
-    # 2. Resource group of the Public IP Address (if different from the cluster's node resource group):
-    # service.beta.kubernetes.io/azure- öffentliche-ip-adresse-resource-gruppe: "your-public-ip-resource-group"
-    # (Note: the annotation key for public IP resource group might vary or might not be needed if in same RG as cluster nodes)
-    # A common one is `service.beta.kubernetes.io/azure-load-balancer-resource-group` for the LB itself,
-    # and `service.beta.kubernetes.io/azure-dns-label-name` for a DNS label.
-    # For public IP, `azure-pip-name` is standard. If it's in a different RG, it's more complex.
-    # Usually, the public IP is expected to be in the same RG as the cluster for auto-association.
+    # 2. Resource group of the Public IP Address (if different from the cluster's node resource group - MC_*):
+    #    Typically, for auto-association, it's expected to be in the node resource group or explicitly specified.
+    # service.beta.kubernetes.io/azure-load-balancer-resource-group: "your-public-ip-resource-group"
+    # (More commonly, the public IP is created in the node resource group if managed by AKS LB integration)
 
-    # --- Optional: DNS Label ---
-    # Creates a DNS A record (e.g., mytraefik.eastus.cloudapp.azure.com)
+    # --- Optional: DNS Label Name ---
+    # Creates a DNS A record for the Load Balancer's public IP (e.g., mytraefik.eastus.cloudapp.azure.com).
+    # The DNS label must be unique within its Azure region.
     # service.beta.kubernetes.io/azure-dns-label-name: "your-traefik-dns-label"
 
     # --- Optional: Enable PROXY protocol (v2) ---
     # If Traefik is configured to use PROXY protocol to receive client IP information.
+    # Both Traefik and the Azure LB need to be configured for this.
     # service.beta.kubernetes.io/azure-load-balancer-enable-proxy-protocol: "true"
+
+    # --- Optional: Specify number of health probe retries ---
+    # service.beta.kubernetes.io/azure-load-balancer-health-probe-num-of-probes: "2" # Default is 2
+
+    # --- Optional: Specify health probe interval ---
+    # service.beta.kubernetes.io/azure-load-balancer-health-probe-interval: "5" # Default is 5 seconds
 
     # Note: Ensure the Kubernetes cloud provider integration with Azure is correctly configured
     # in your AKS cluster for these annotations to take effect.
     # The specific annotations available and their behavior can depend on the version
-    # of the Kubernetes Azure cloud provider. Always refer to its official documentation.
+    # of the Kubernetes Azure cloud provider and AKS. Always refer to official Azure Kubernetes Service (AKS) documentation.

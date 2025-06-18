@@ -1,11 +1,12 @@
 # deploy/kubernetes/overlays/azure/kustomization.yaml
 # This Kustomization file defines the Azure-specific overlay for the Kubernetes deployment.
-# It builds upon the 'base' configuration and applies Azure-specific resources and patches.
+# It builds upon the 'base' configuration and applies Azure-specific resources, patches, and image overrides.
 
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # 1. Include the base configuration
+# This brings in all the common Kubernetes manifests defined in the base layer.
 bases:
   - ../../base # Points to deploy/kubernetes/base
 
@@ -15,11 +16,10 @@ resources:
   - resources/secret-provider-classes-azure.yaml
 
 # 3. List patches to apply to the base resources for the Azure environment.
-#    Using patchesStrategicMerge for broad compatibility.
-#    For Kustomize v4+, `patches:` can also be used for plain YAML patches.
+#    These patches customize base resources for Azure-specific needs.
 patchesStrategicMerge:
   # Patch to update secret references in Deployments/StatefulSets to use
-  # Kubernetes Secrets created by SecretProviderClasses that source from Azure Key Vault.
+  # Kubernetes Secrets created by SecretProviderClasses (sourcing from Azure Key Vault).
   - patches/update-secret-references-azure.yaml
 
   # Patch to add Azure Load Balancer specific annotations to the Traefik service.
@@ -30,28 +30,43 @@ patchesStrategicMerge:
   # or patches to configure Azure-specific storage options for PersistentVolumeClaims.
   # - patches/serviceaccount-workload-identity-annotations.yaml
   # - patches/pvc-azure-storage-config.yaml
-  #
-  # Example for Workload Identity (serviceaccount-workload-identity-annotations.yaml):
-  #   apiVersion: v1
-  #   kind: ServiceAccount
-  #   metadata:
-  #     name: <service-account-name>
-  #     namespace: <namespace>
-  #     annotations:
-  #       azure.workload.identity/client-id: "YOUR_AZURE_AD_APP_CLIENT_ID"
-  #       azure.workload.identity/tenant-id: "YOUR_AZURE_TENANT_ID"
-  #     labels: # Required for webhook to inject details
-  #       azure.workload.identity/use: "true"
 
+# 4. Image Overrides for Azure Container Registry (ACR)
+# This section overrides placeholder image names used in the base manifests
+# with actual ACR repository URIs for the Azure environment.
+# Replace YOUR_ACR_LOGIN_SERVER (e.g., myatomicacr.azurecr.io) and
+# YOUR_PROJECT_NAME_PREFIX (e.g., atomic if your images in ACR are named like atomic/atomic-functions)
+# with your actual values. The image tag (e.g., 'latest' or a specific version) should also be set as appropriate.
+# The Terraform acr.tf created repositories like "${var.project_name}-${each.key}", e.g., "atomic-atomic-functions".
+# So, the image name in ACR would be "atomic-atomic-functions" if project_name is "atomic".
+# Or, if you push to ACR with a simpler name like "atomic-functions", adjust accordingly.
+# Assuming image names in ACR are PROJECT_NAME_FROM_TF/SERVICE_NAME_SUFFIX or just SERVICE_NAME_SUFFIX if PROJECT_NAME_FROM_TF is part of login server or implicit.
+# Let's use a common pattern: YOUR_ACR_LOGIN_SERVER/YOUR_PROJECT_NAME_FROM_TF/atomic-<service_suffix> or YOUR_ACR_LOGIN_SERVER/atomic-<service_suffix>
+# The TF for ACR names them like: ${var.project_name}-${image_name_suffix} e.g. atomic-atomic-scheduler.
+images:
+  - name: placeholder-atomic-scheduler # Base name for Optaplanner image
+    # Example: myacr.azurecr.io/atomic-atomic-scheduler
+    newName: YOUR_ACR_LOGIN_SERVER/YOUR_PROJECT_NAME_FROM_TF-atomic-scheduler
+    newTag: latest # Or a specific Git SHA, version tag, etc.
 
-# Images: Overlays can also be used to update image tags or registries for Azure Container Registry (ACR).
-# Example:
-# images:
-#   - name: placeholder-image-name # As defined in the base deployment
-#     newName: youracreg.azurecr.io/imagename # New image URI for ACR
-#     newTag: specific-tag-for-azure # New image tag for Azure
+  - name: placeholder-atomic-functions # Base name for Functions service image
+    newName: YOUR_ACR_LOGIN_SERVER/YOUR_PROJECT_NAME_FROM_TF-atomic-functions
+    newTag: latest
+
+  - name: placeholder-atomic-handshake # Base name for Handshake service image
+    newName: YOUR_ACR_LOGIN_SERVER/YOUR_PROJECT_NAME_FROM_TF-atomic-handshake
+    newTag: latest
+
+  - name: placeholder-atomic-oauth # Base name for OAuth service image
+    newName: YOUR_ACR_LOGIN_SERVER/YOUR_PROJECT_NAME_FROM_TF-atomic-oauth
+    newTag: latest
+
+  - name: placeholder-atomic-app # Base name for App (frontend) service image
+    newName: YOUR_ACR_LOGIN_SERVER/YOUR_PROJECT_NAME_FROM_TF-atomic-app
+    newTag: latest
 
 # Common Labels or Annotations for this overlay (optional)
+# These would apply to all resources defined or included by this kustomization if uncommented.
 # commonLabels:
 #   cloud-provider: azure
 #   overlay: azure-specific
