@@ -30,16 +30,16 @@ class Timeslot {
     // No-arg constructor required for Hibernate
     constructor()
 
-    constructor(dayOfWeek: DayOfWeek, startTime: LocalTime, endTime: LocalTime, monthDay: MonthDay, userId: UUID?) {
+    constructor(dayOfWeek: DayOfWeek, startTime: LocalTime, endTime: LocalTime, monthDay: MonthDay, hostId: UUID?) { // Renamed userId to hostId for clarity
         this.dayOfWeek = dayOfWeek
         this.startTime = startTime
         this.endTime = endTime
-        this.hostId = userId
+        this.hostId = hostId // Correctly assigns to hostId field
         this.monthDay = monthDay
     }
 
-    constructor(id: Long?, dayOfWeek: DayOfWeek, startTime: LocalTime, endTime: LocalTime, monthDay: MonthDay, userId: UUID?)
-            : this(dayOfWeek, startTime, endTime, monthDay, userId) {
+    constructor(id: Long?, dayOfWeek: DayOfWeek, startTime: LocalTime, endTime: LocalTime, monthDay: MonthDay, hostId: UUID?) // Renamed userId to hostId
+            : this(dayOfWeek, startTime, endTime, monthDay, hostId) {
         this.id = id
     }
 
