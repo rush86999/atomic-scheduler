@@ -189,6 +189,9 @@ class TimeTableResource {
     @ConfigProperty(name = "PASSWORD")
     lateinit var password: String
 
+    @ConfigProperty(name = "CALLBACK_SECRET_TOKEN")
+    lateinit var callbackSecretToken: String
+
     @Inject
     lateinit var timeslotRepository: TimeslotRepository
     @Inject
@@ -398,7 +401,10 @@ class TimeTableResource {
 
         deleteTableGivenUser(hostId)
 
-        val request = Request(Method.POST, callBackUrl).body(bodyString).header("Content-Type", "application/json")
+        val request = Request(Method.POST, callBackUrl)
+            .body(bodyString)
+            .header("Content-Type", "application/json")
+            .header("X-Callback-Token", callbackSecretToken)
         val response = clientHandler(request)
 
         LOGGER.debug("Callback response status: ${response.status}")
