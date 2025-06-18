@@ -13,7 +13,6 @@ class User {
     @Id
     lateinit var id: UUID
 
-    lateinit var name: String // Added name property
     lateinit var hostId: UUID
 
     var maxWorkLoadPercent: Int = 85
@@ -30,7 +29,6 @@ class User {
     constructor()
 
     constructor(id: UUID,
-                name: String, // Added name to constructor
                 hostId: UUID,
                 maxWorkLoadPercent: Int,
                 backToBackMeetings: Boolean,
@@ -39,7 +37,6 @@ class User {
                 workTimes: MutableList<WorkTime>,
     ) {
         this.id = id
-        this.name = name // Initialize name
         this.hostId = hostId
         this.maxWorkLoadPercent = maxWorkLoadPercent
         this.backToBackMeetings = backToBackMeetings

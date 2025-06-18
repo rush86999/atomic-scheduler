@@ -21,7 +21,6 @@ import org.optaplanner.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore
 import org.optaplanner.core.api.solver.SolverManager
 import java.time.LocalDateTime
 import java.util.*
-import javax.ws.rs.core.Response // Added import for Response.Status
 import javax.annotation.security.RolesAllowed
 import javax.inject.Inject
 import javax.transaction.Transactional
@@ -29,8 +28,8 @@ import javax.ws.rs.*
 
 // DTOs for callAPI payload
 data class TimeslotDto(
-    val id: Long?, // Changed from UUID?
-    val hostId: UUID?, // Changed from String?
+    val id: UUID?,
+    val hostId: String?,
     val dayOfWeek: String?,
     val startTime: String?,
     val endTime: String?,
@@ -38,17 +37,16 @@ data class TimeslotDto(
 )
 
 data class WorkTimeDto(
-    val id: Long?, // Changed from UUID?
-    val userId: UUID?, // Changed from String?
-    val hostId: UUID?, // Changed from String?
+    val id: UUID?,
+    val userId: String?,
+    val hostId: String?,
     val startTime: String?,
     val endTime: String?
 )
 
 data class UserDto(
-    val id: UUID?, // Changed from String?
-    val name: String?, // Added name
-    val hostId: UUID?, // Changed from String?
+    val id: String?,
+    val hostId: String?,
     val maxWorkLoadPercent: Int?,
     val backToBackMeetings: Boolean?,
     val maxNumberOfMeetings: Int?,
@@ -56,27 +54,26 @@ data class UserDto(
 )
 
 data class PreferredTimeRangeDto(
-    val id: Long?, // Changed from UUID?
-    val eventId: String?, // Changed from UUID?
-    val userId: UUID?, // Changed from String?
-    val hostId: UUID?, // Changed from String?
+    val id: UUID?,
+    val eventId: UUID?,
+    val userId: String?,
+    val hostId: String?,
     val dayOfWeek: String?,
     val startTime: String?,
     val endTime: String?
 )
 
 data class EventDto(
-    val id: String?, // Changed from UUID?
-    val name: String?, // Added name
-    val userId: UUID?, // Changed from String?
-    val hostId: UUID?, // Changed from String?
+    val id: UUID?,
+    val userId: String?,
+    val hostId: String?,
     val preferredTimeRanges: List<PreferredTimeRangeDto>?
 )
 
 data class EventPartDto(
-    val id: Long?, // Changed from String?
-    val groupId: String?, // Changed from UUID?
-    val eventId: String?, // Changed from UUID?
+    val id: String?,
+    val groupId: UUID?,
+    val eventId: UUID?,
     val part: Int?,
     val lastPart: Boolean?,
     val startDate: LocalDateTime?,
@@ -91,7 +88,7 @@ data class EventPartDto(
     val priority: Int?,
     val isPreEvent: Boolean?,
     val isPostEvent: Boolean?,
-    val forEventId: String?, // Changed from UUID?
+    val forEventId: UUID?,
     val positiveImpactScore: Int?,
     val negativeImpactScore: Int?,
     val positiveImpactDayOfWeek: String?,
@@ -107,10 +104,10 @@ data class EventPartDto(
     val isMeeting: Boolean?,
     val dailyTaskList: Boolean?,
     val weeklyTaskList: Boolean?,
-    val gap: Boolean?, // Changed from Long?
+    val gap: Long?,
     val preferredStartTimeRange: String?,
     val preferredEndTimeRange: String?,
-    // val totalWorkingHours: Int?, // Removed as not in domain EventPart
+    val totalWorkingHours: Int?,
     val event: EventDto?, // Assuming EventDto is defined
     val timeslot: TimeslotDto? // Assuming TimeslotDto is defined
 )
@@ -121,7 +118,7 @@ data class TimeTableSolutionDto(
     val eventPartList: List<EventPartDto>?,
     val score: String?,
     val fileKey: String?,
-    val hostId: UUID? // Changed from String?
+    val hostId: String?
 )
 
 
@@ -244,41 +241,43 @@ class TimeTableResource {
 
         // Populate DTOs
         val timeslotDtos = timeslotsForHost.map { ts ->
-            TimeslotDto(ts.id, ts.hostId, ts.dayOfWeek?.toString(), ts.startTime?.toString(), ts.endTime?.toString(), ts.monthDay?.toString())
+            TimeslotDto(ts.id, ts.hostId?.toString(), ts.dayOfWeek?.toString(), ts.startTime?.toString(), ts.endTime?.toString(), ts.monthDay?.toString())
         }
 
         val userDtos = usersForHost.map { u ->
             val workTimeDtos = u.workTimes.map { wt ->
-                WorkTimeDto(wt.id, wt.userId, wt.hostId, wt.startTime?.toString(), wt.endTime?.toString())
+                WorkTimeDto(wt.id, wt.userId?.toString(), wt.hostId?.toString(), wt.startTime?.toString(), wt.endTime?.toString())
             }
-            UserDto(u.id, u.name, u.hostId, u.maxWorkLoadPercent, u.backToBackMeetings, u.maxNumberOfMeetings, workTimeDtos)
+            UserDto(u.id?.toString(), u.hostId?.toString(), u.maxWorkLoadPercent, u.backToBackMeetings, u.maxNumberOfMeetings, workTimeDtos)
         }
 
         // Fetch related Events and their PreferredTimeRanges efficiently
-        val eventIds = eventPartsForHost.mapNotNull { it.eventId }.distinct() // eventId is String
+        val eventIds = eventPartsForHost.mapNotNull { it.eventId }.distinct()
         val eventsForHost = if (eventIds.isNotEmpty()) eventRepository.list("id in ?1", eventIds).associateBy { it.id } else emptyMap()
 
-        // Assuming PreferredTimeRanges are part of the Event objects due to EAGER fetch or similar
-        val eventPartDtos = eventPartsForHost.map { ep ->
-            val userDto = userDtos.find { it.id == ep.userId } // ep.userId is UUID
-            val eventDomainObject = eventsForHost[ep.eventId] // ep.eventId is String
+        val preferredTimeRangeIds = eventsForHost.values.flatMap { it.preferredTimeRanges?.mapNotNull { ptr -> ptr.id } ?: emptyList() }.distinct()
+        // Assuming PreferredTimeRanges are either eagerly fetched with Events or fetched here if needed.
+        // For simplicity, let's assume they are part of the Event objects.
 
-            val preferredTimeRangeDtos = eventDomainObject?.preferredTimeRanges?.map { ptr ->
-                PreferredTimeRangeDto(ptr.id, ptr.eventId, ptr.userId, ptr.hostId, ptr.dayOfWeek?.toString(), ptr.startTime?.toString(), ptr.endTime?.toString())
+        val eventPartDtos = eventPartsForHost.map { ep ->
+            val userDto = userDtos.find { it.id == ep.userId?.toString() } // Find already mapped UserDto
+            val event = eventsForHost[ep.eventId]
+            val preferredTimeRangeDtos = event?.preferredTimeRanges?.map { ptr ->
+                PreferredTimeRangeDto(ptr.id, ptr.eventId, ptr.userId?.toString(), ptr.hostId?.toString(), ptr.dayOfWeek?.toString(), ptr.startTime?.toString(), ptr.endTime?.toString())
             }
-            val eventDto = eventDomainObject?.let { e ->
-                EventDto(e.id, e.name, e.userId, e.hostId, preferredTimeRangeDtos)
+            val eventDto = event?.let { e ->
+                EventDto(e.id, e.userId?.toString(), e.hostId?.toString(), preferredTimeRangeDtos)
             }
             val timeslotDto = ep.timeslot?.let { ts -> // ep.timeslot might be null
                  timeslotsForHost.find { it.id == ts.id }?.let { // find matching from already fetched timeslots
-                     TimeslotDto(it.id, it.hostId, it.dayOfWeek?.toString(), it.startTime?.toString(), it.endTime?.toString(), it.monthDay?.toString())
+                     TimeslotDto(it.id, it.hostId?.toString(), it.dayOfWeek?.toString(), it.startTime?.toString(), it.endTime?.toString(), it.monthDay?.toString())
                  }
             }
 
             EventPartDto(
-                id = ep.id, // Long?
-                groupId = ep.groupId, // String
-                eventId = ep.eventId, // String
+                id = ep.id?.toString(),
+                groupId = ep.groupId,
+                eventId = ep.eventId,
                 part = ep.part,
                 lastPart = ep.lastPart,
                 startDate = ep.startDate,
@@ -293,7 +292,7 @@ class TimeTableResource {
                 priority = ep.priority,
                 isPreEvent = ep.isPreEvent,
                 isPostEvent = ep.isPostEvent,
-                forEventId = ep.forEventId, // String?
+                forEventId = ep.forEventId,
                 positiveImpactScore = ep.positiveImpactScore,
                 negativeImpactScore = ep.negativeImpactScore,
                 positiveImpactDayOfWeek = ep.positiveImpactDayOfWeek?.toString(),
@@ -309,10 +308,10 @@ class TimeTableResource {
                 isMeeting = ep.isMeeting,
                 dailyTaskList = ep.dailyTaskList,
                 weeklyTaskList = ep.weeklyTaskList,
-                gap = ep.gap, // Boolean?
+                gap = ep.gap,
                 preferredStartTimeRange = ep.preferredStartTimeRange?.toString(),
                 preferredEndTimeRange = ep.preferredEndTimeRange?.toString(),
-                // totalWorkingHours removed
+                totalWorkingHours = ep.totalWorkingHours,
                 event = eventDto,
                 timeslot = timeslotDto
             )
@@ -344,7 +343,7 @@ class TimeTableResource {
             eventPartList = eventPartDtos,
             score = currentScore,
             fileKey = fileKey,
-            hostId = hostId // UUID
+            hostId = hostId.toString()
         )
 
         // Serialize DTO to JSON
@@ -422,14 +421,13 @@ class TimeTableResource {
         val userIds = eventParts.map { it.userId }.distinct()
         val userMap = userRepository.list("id in ?1", userIds).associateBy { it.id }
         eventParts.forEach { eventPart ->
-            userMap[eventPart.userId]?.let { eventPart.user = it }
+            eventPart.user = userMap[eventPart.userId]
             // LOGGER.debug("Assigned user ${eventPart.user} to eventPart ${eventPart.id}")
         }
 
         // Optimize Event fetching and persist related entities
         var eventsToPersist: MutableList<Event> = mutableListOf()
-        // Ensure ep.event is not null before adding. If it can be null, handle appropriately.
-        eventParts.forEach { ep -> ep.event?.let { eventsToPersist.add(it) } }
+        eventParts.forEach { ep -> eventsToPersist.add(ep.event) }
         val distinctEventsToPersist = eventsToPersist.distinctBy { it.id }
         eventRepository.persist(distinctEventsToPersist)
 
@@ -439,11 +437,10 @@ class TimeTableResource {
         preferredTimeRangeRepository.persist(distinctPreferredTimeRanges)
 
         // Assign fetched Events to EventParts
-        val eventIds = eventParts.mapNotNull { it.eventId }.distinct() // eventId is String
-        val eventMap = if(eventIds.isNotEmpty()) eventRepository.list("id in ?1", eventIds).associateBy { it.id } else emptyMap()
-
+        val eventIds = eventParts.map { it.eventId }.distinct()
+        val eventMap = eventRepository.list("id in ?1", eventIds).associateBy { it.id }
         eventParts.forEach { eventPart ->
-            eventMap[eventPart.eventId]?.let { eventPart.event = it }
+            eventPart.event = eventMap[eventPart.eventId]
             // LOGGER.debug("Assigned event ${eventPart.event} to eventPart ${eventPart.id}")
         }
 
@@ -524,8 +521,6 @@ class TimeTableResource {
     @POST
     @Path("/user/solve-day")
     fun solveDay(args: PostTableRequestBody) {
-        // Ensure hostId is not null before proceeding
-        args.hostId ?: throw WebApplicationException("hostId must be provided", Response.Status.BAD_REQUEST)
         processSolveRequest(args, false)
     }
 
@@ -533,26 +528,24 @@ class TimeTableResource {
     @Path("/admin/solve-day")
     @RolesAllowed("admin")
     fun adminSolveDay(args: PostTableRequestBody) {
-        // Ensure hostId is not null before proceeding
-        args.hostId ?: throw WebApplicationException("hostId must be provided", Response.Status.BAD_REQUEST)
         processSolveRequest(args, true)
     }
 
     @DELETE
-    @Path("/user/delete/{hostId}") // Changed from id to hostId to match deleteTableGivenUser
+    @Path("/user/delete/{id}")
     fun deleteTable(
-        @PathParam("hostId") hostId: UUID,
+        @PathParam("id") id: UUID,
     ) {
-        deleteTableGivenUser(hostId)
+        deleteTableGivenUser(id)
     }
 
     @DELETE
-    @Path("/admin/delete/{hostId}") // Changed from id to hostId to match deleteTableGivenUser
+    @Path("/admin/delete/{id}")
     @RolesAllowed("admin")
     fun adminDeleteTable(
-        @PathParam("hostId") hostId: UUID,
+        @PathParam("id") id: UUID,
     ) {
-        deleteTableGivenUser(hostId)
+        deleteTableGivenUser(id)
     }
 
 }
