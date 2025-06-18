@@ -1,16 +1,37 @@
+# ClusterIP Service for client connections to PostgreSQL
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres-service # This name is referenced in StatefulSet's serviceName
+  name: postgres-service
   namespace: postgres
   labels:
     app: postgres
 spec:
   type: ClusterIP
   selector:
-    app: postgres
+    app: postgres # Selects the PostgreSQL pods managed by the StatefulSet
   ports:
     - name: postgresql
       protocol: TCP
-      port: 5432
-      targetPort: postgresql # Refers to the container port name in StatefulSet podSpec
+      port: 5432       # Port the service will listen on
+      targetPort: postgresql # Matches the 'postgresql' port name in the StatefulSet's podSpec (containerPort 5432)
+
+---
+# Headless Service for PostgreSQL StatefulSet pod discovery
+# This service provides stable DNS records for each pod (e.g., postgres-0.postgres-headless.postgres.svc.cluster.local)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  namespace: postgres
+  labels:
+    app: postgres
+spec:
+  clusterIP: None # Defines the service as headless
+  selector:
+    app: postgres # Selects the PostgreSQL pods
+  ports:
+    - name: postgresql
+      protocol: TCP
+      port: 5432       # Port for pod-to-pod communication if needed directly, or just for DNS record.
+      targetPort: postgresql # Matches the 'postgresql' port name in the StatefulSet's podSpec.

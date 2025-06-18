@@ -4,159 +4,89 @@ metadata:
   name: app-configmap
   namespace: app
 data:
-  # Core Service URLs
-  NEXT_PUBLIC_HASURA_GRAPHQL_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080/v1/graphql" # Internal for server-side calls if any, or use external below
-  NEXT_PUBLIC_HASURA_GRAPHQL_WS_URL: "ws://hasura-service.hasura.svc.cluster.local:8080/v1/graphql" # Internal WebSocket for Hasura
-  # For client-side (browser), these Hasura URLs should point to the externally exposed Hasura endpoint
-  NEXT_PUBLIC_EXTERNAL_HASURA_GRAPHQL_GRAPHQL_URL: "https://${HOST_NAME}/v1/graphql" # Placeholder for external Hasura
-  NEXT_PUBLIC_EXTERNAL_HASURA_GRAPHQL_WS_URL: "wss://${HOST_NAME}/v1/graphql" # Placeholder for external Hasura WS
+  # Core Application Settings
+  NODE_ENV: "production"
+  PORT: "3000" # Port the Next.js app runs on
+  LOG_LEVEL: "info" # Example log level
+  HOST_NAME: "your-app-domain.com" # Placeholder for actual external domain, used in other NEXT_PUBLIC_ URLs
 
-  NEXT_PUBLIC_FUNCTION_SERVER_URL: "http://functions-service.functions.svc.cluster.local:3000" # Internal URL for functions
-  # For client-side, functions might be exposed via an API gateway or directly
-  NEXT_PUBLIC_EXTERNAL_FUNCTION_SERVER_URL: "https://${HOST_NAME}/v1/functions" # Placeholder for external functions base URL
+  # NEXT_PUBLIC_ variables for client-side consumption
+  # These should point to externally accessible URLs or be general config values.
 
-  NEXT_PUBLIC_CHAT_WS_API_URL: "ws://functions-service.functions.svc.cluster.local:3030/chat" # Assuming chat is on port 3030 of functions, path /chat
-  # For client-side, chat WebSocket might be exposed via an API gateway or specific Ingress
-  NEXT_PUBLIC_EXTERNAL_CHAT_WS_API_URL: "wss://${HOST_NAME}/v1/chat-ws" # Placeholder for external chat WebSocket
+  # Hasura URLs (for client-side access, should be external endpoint)
+  NEXT_PUBLIC_HASURA_GRAPHQL_GRAPHQL_URL: "https://${HOST_NAME}/v1/graphql"
+  NEXT_PUBLIC_HASURA_GRAPHQL_WS_URL: "wss://${HOST_NAME}/v1/graphql" # Note: docker-compose had /v1/graphql, not /v1alpha1/graphql
 
-  # OAuth related URLs (pointing to the OAuth service, which would be externally exposed)
-  NEXT_PUBLIC_OAUTH_GOOGLE_LOGIN_URL: "https://${HOST_NAME}/v1/oauth/google" # Path on your oauth service
-  NEXT_PUBLIC_OAUTH_APPLE_LOGIN_URL: "https://${HOST_NAME}/v1/oauth/apple"   # Path on your oauth service
-  # These are often constructed by the app itself using NEXT_PUBLIC_OAUTH_BASE_URL or similar.
-  # Alternatively, provide the full paths if they are fixed.
+  # Functions Service related URLs (external endpoints)
+  NEXT_PUBLIC_FUNCTIONS_BASE_URL: "https://${HOST_NAME}/v1/functions" # Base for various function calls
+  NEXT_PUBLIC_CHAT_WS_API_URL: "wss://${HOST_NAME}/v1/functions/websocket" # WebSocket endpoint on functions service, exposed externally
 
-  # Handshake Service URL
-  NEXT_PUBLIC_ATOMIC_HANDSHAKE_API: "http://handshake-service.handshake.svc.cluster.local:3000/api" # Internal URL, assuming /api path
-  # For client-side, handshake API might be exposed via an API gateway or directly
-  NEXT_PUBLIC_EXTERNAL_ATOMIC_HANDSHAKE_API: "https://${HOST_NAME}/v1/handshake-api" # Placeholder for external handshake API
+  # Handshake API URL (external endpoint)
+  NEXT_PUBLIC_ATOMIC_HANDSHAKE_API: "https://${HOST_NAME}/v1/functions/handshake-api/createRecurMeetAssists/create-recur-meet-assists-public"
 
-  # S3/Storage URL
-  NEXT_PUBLIC_S3_ENDPOINT_URL: "http://minio-service.minio.svc.cluster.local:8484" # Internal Minio endpoint
-  NEXT_PUBLIC_S3_BUCKET_NAME: "atomic-assets" # Default bucket name
-  # For direct client-side uploads or access to public assets, an external Minio URL is needed
-  NEXT_PUBLIC_EXTERNAL_S3_PUBLIC_URL: "https://${MINIO_HOST_NAME}/${S3_BUCKET_NAME}" # Placeholder for external Minio URL
+  # OAuth related URLs (external endpoints of the OAuth service)
+  NEXT_PUBLIC_AUTH_URL: "https://${HOST_NAME}/v1/oauth" # Base URL for the OAuth service
 
-  # Zoom Integration related public variables (Client ID might come from here if truly public and not from ARG secret)
-  NEXT_PUBLIC_ZOOM_CLIENT_ID: "YOUR_PUBLIC_ZOOM_CLIENT_ID" # If different from the one in secrets or needs to be non-secret
-  NEXT_PUBLIC_ZOOM_REDIRECT_URL: "https://${HOST_NAME}/oauth/zoom/callback" # Callback path on your main app or oauth service
+  # Optaplanner API URL (external endpoint)
+  NEXT_PUBLIC_OPTAPLANNER_API_URL: "https://${HOST_NAME}/v1/optaplanner/api"
 
-  # General App Configuration
+  # S3/Storage related (external access if clients interact directly, or could be via functions)
+  # If clients upload/download directly, these need to be external MinIO URLs or presigned URLs from functions.
+  # For simplicity, providing a placeholder for an external images domain.
+  NEXT_PUBLIC_IMAGES_DOMAIN: "${HOST_NAME}" # Could be CDN or direct S3/Minio external URL base
+  # NEXT_PUBLIC_S3_ENDPOINT_URL: "https://${MINIO_HOST_NAME}" # If Minio has its own external domain
+  # NEXT_PUBLIC_S3_BUCKET_NAME: "atomic-assets"
+
+  # Zoom Integration (public client ID for frontend)
+  NEXT_PUBLIC_ZOOM_CLIENT_ID: "YOUR_PUBLIC_ZOOM_CLIENT_ID_PLACEHOLDER" # This might be same as secret ZOOM_CLIENT_ID or a different public one
+  NEXT_PUBLIC_ZOOM_REDIRECT_URL: "https://${HOST_NAME}/oauth/zoom/callback" # Callback to your app/oauth service
+
+  # Google OAuth (public client IDs for frontend)
+  # These are often public. If the ARGs in secret.yaml are for build-time and these are runtime for client, they can be here.
+  # If GOOGLE_CLIENT_ID_ATOMIC_WEB from secret is THE source, then this should be mapped from secret in deployment.
+  NEXT_PUBLIC_GOOGLE_CLIENT_ID_WEB: "YOUR_GOOGLE_CLIENT_ID_WEB_PLACEHOLDER_PUBLIC"
+  NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB: "YOUR_GOOGLE_CLIENT_ID_ATOMIC_WEB_PLACEHOLDER_PUBLIC"
+
+  # External Services
+  NEXT_PUBLIC_POSTHOG_HOST: "https://app.posthog.com" # As per compose
+  NEXT_PUBLIC_POSTHOG_KEY: "" # Placeholder, fill if used. Usually public.
+  NEXT_PUBLIC_STRIPE_KEY: "" # Stripe Publishable Key. Placeholder, fill if used. Usually public.
+  NEXT_PUBLIC_CALCOM_URL: "https://cal.com" # As per compose
+
+  # General App Info & Links
   NEXT_PUBLIC_APP_NAME: "Atomic Entrepreneur"
-  NEXT_PUBLIC_APP_URL: "https://${HOST_NAME}" # The main external URL of this 'app' service
-  NEXT_PUBLIC_NODE_ENV: "production" # Or "development"
-  NEXT_PUBLIC_LOG_LEVEL: "info"
-  NEXT_PUBLIC_PORT: "3000" # Port the Next.js app runs on (for consistency, though client doesn't use this directly)
-  NEXT_PUBLIC_MAINTENANCE_MODE: "false"
-
-  # Feature Flags (examples)
-  NEXT_PUBLIC_ENABLE_FEATURE_X: "true"
-  NEXT_PUBLIC_ENABLE_FEATURE_Y: "false"
-
-  # Other miscellaneous public URLs or keys
+  NEXT_PUBLIC_APP_URL: "https://${HOST_NAME}" # Main external URL of this 'app' service
+  NEXT_PUBLIC_ENVIRONMENT: "production" # Client-side environment flag
+  NEXT_PUBLIC_SENTRY_DSN: "" # Sentry DSN for frontend error tracking. Placeholder.
+  NEXT_PUBLIC_SENTRY_ENVIRONMENT: "production"
+  NEXT_PUBLIC_GOOGLE_ANALYTICS_ID: "" # Google Analytics Tracking ID. Placeholder.
   NEXT_PUBLIC_TERMS_URL: "https://${HOST_NAME}/terms"
   NEXT_PUBLIC_PRIVACY_URL: "https://${HOST_NAME}/privacy"
   NEXT_PUBLIC_CONTACT_EMAIL: "support@example.com"
+  NEXT_PUBLIC_MAINTENANCE_MODE: "false"
 
-  # Note: ${HOST_NAME} and ${MINIO_HOST_NAME} are placeholders.
-  # These should be replaced with actual domain names, possibly via Ingress variables or CI/CD substitution.
-  # For internal service-to-service communication not directly from the client browser,
-  # use the Kubernetes FQDNs (e.g., functions-service.functions.svc.cluster.local:3000).
-  # NEXT_PUBLIC_ variables are embedded in the client-side bundle, so they must be resolvable by the browser.
-  # This means internal K8s FQDNs are only suitable for these if the client is also somehow within the cluster network (e.g. dev tools).
-  # For most NEXT_PUBLIC_ variables that point to backend services, they should use the external, publicly accessible URLs.
-  # I've provided both internal (e.g. NEXT_PUBLIC_HASURA_GRAPHQL_GRAPHQL_URL) and external
-  # (e.g. NEXT_PUBLIC_EXTERNAL_HASURA_GRAPHQL_GRAPHQL_URL) examples for clarity.
-  # The app's code would decide which one to use based on context (server-side vs client-side rendering/calls).
-  # For a pure SPA, all backend URLs would be external.
-  # For Next.js with SSR/API routes, it can use internal URLs for its server-side part and external for client-side part.
-  # The current setup primarily uses internal URLs for NEXT_PUBLIC_ variables,
-  # which implies the app's server-side part uses them or they are placeholders to be replaced.
-  # Let's adjust to make most NEXT_PUBLIC_ variables point to external placeholders for clarity,
-  # as they are intended for client-side consumption.
+  # Feature Flags (examples)
+  # NEXT_PUBLIC_ENABLE_FEATURE_X: "true"
 
-  # --- REVISED Approach for NEXT_PUBLIC_ variables ---
-  # All NEXT_PUBLIC_ variables are for client-side consumption, so they should point to public URLs.
-  # Server-side communication from the 'app' service's backend (API routes, SSR) to other internal services
-  # should use non-prefixed environment variables with K8s FQDNs. These would be defined in a separate configmap/secret
-  # or directly in the deployment if few, and not prefixed with NEXT_PUBLIC_.
-
-  # For this ConfigMap, we'll keep NEXT_PUBLIC_ variables and assume they are intended for external exposure.
-  # Redefining some critical ones to use ${HOST_NAME} or specific external paths.
-
-  NEXT_PUBLIC_HASURA_GRAPHQL_GRAPHQL_URL: "https://${HOST_NAME}/v1/graphql"
-  NEXT_PUBLIC_HASURA_GRAPHQL_WS_URL: "wss://${HOST_NAME}/v1/graphql"
-  NEXT_PUBLIC_FUNCTION_SERVER_URL: "https://${HOST_NAME}/v1/functions" # Base URL for functions exposed externally
-  NEXT_PUBLIC_CHAT_WS_API_URL: "wss://${HOST_NAME}/v1/chat-ws"
-  NEXT_PUBLIC_ATOMIC_HANDSHAKE_API: "https://${HOST_NAME}/v1/handshake-api" # Handshake API external endpoint
-  NEXT_PUBLIC_S3_PUBLIC_URL: "https://${MINIO_HOST_NAME}" # Base URL for Minio, bucket might be part of path or app logic
-
-  # Internal URLs for server-side use by the app service (if its API routes call other services)
-  # These should NOT be prefixed with NEXT_PUBLIC_
-  # Example:
+  # Internal URLs for server-side rendering (SSR) or API routes within the Next.js app, if needed.
+  # These should NOT be prefixed with NEXT_PUBLIC_ if they are only for server-side calls.
+  # Example (if 'app' service's backend/API routes call 'functions' service internally):
   INTERNAL_FUNCTIONS_URL: "http://functions-service.functions.svc.cluster.local:3000"
-  INTERNAL_HASURA_URL: "http://hasura-service.hasura.svc.cluster.local:8080/v1/graphql"
-  # These internal URLs would be added to a separate ConfigMap or directly to env vars in deployment if needed by app's backend.
-  # For now, this ConfigMap focuses on NEXT_PUBLIC_ variables as per the prompt's emphasis.
-  # The original list from compose had only NEXT_PUBLIC_ vars for 'app', so sticking to that.
+  INTERNAL_HASURA_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080/v1/graphql"
+  # These are not used by default by NEXT_PUBLIC_ variables but can be used by the app's server-side logic.
+  # The original docker-compose for 'app' only listed NEXT_PUBLIC_ variables, so we primarily focus on those.
+  # Adding them here for completeness if the app's server-side logic needs them.
 
-  PLACEHOLDER_HOST_NAME: "localhost:8080" # Used by compose, for k8s this will be replaced by actual domain via Ingress
-  # Using HOST_NAME as a placeholder for the actual external domain.
-  # Using MINIO_HOST_NAME for Minio's external domain.
-  # These would typically be the same domain if behind a unified Ingress controller.
-  # Example: HOST_NAME=app.yourdomain.com, MINIO_HOST_NAME=minio.yourdomain.com or app.yourdomain.com/minio
+  # Placeholder for MinIO external host if different from main app host
+  MINIO_HOST_NAME: "minio.your-app-domain.com" # Example placeholder
 
-  # Keeping the original list structure from compose as much as possible for NEXT_PUBLIC_ variables:
-  NEXT_PUBLIC_AUTH_URL: "https://${HOST_NAME}/v1/oauth" # Assuming oauth service is externally at /v1/oauth
-  NEXT_PUBLIC_FUNCTIONS_BASE_URL: "https://${HOST_NAME}/v1/functions" # From compose
-  NEXT_PUBLIC_OPTAPLANNER_API_URL: "https://${HOST_NAME}/v1/optaplanner/api" # From compose
-  NEXT_PUBLIC_POSTHOG_HOST: "https://app.posthog.com" # From compose (external service)
-  NEXT_PUBLIC_POSTHOG_KEY: "" # From compose (this should probably be a secret if it's sensitive)
-  NEXT_PUBLIC_STRIPE_KEY: "" # From compose (Stripe public key, generally safe for client-side)
-  NEXT_PUBLIC_CALCOM_URL: "https://cal.com" # From compose (external service)
-  NEXT_PUBLIC_IMAGES_DOMAIN: "${HOST_NAME}" # Domain for images, could be CDN or Minio external
-  NEXT_PUBLIC_ENVIRONMENT: "production" # Or "development", "staging"
-  NEXT_PUBLIC_SENTRY_DSN: "" # Sentry DSN, should be secret if contains sensitive parts
-  NEXT_PUBLIC_SENTRY_ENVIRONMENT: "production"
-  NEXT_PUBLIC_GOOGLE_ANALYTICS_ID: ""
-  NEXT_PUBLIC_GOOGLE_CLIENT_ID_WEB: "YOUR_GOOGLE_CLIENT_ID_WEB_FROM_SECRET_OR_HERE" # Often public, can be here or from secret if ARG
-  NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB: "YOUR_GOOGLE_CLIENT_ID_ATOMIC_WEB_FROM_SECRET_OR_HERE"
-
-  # Ensure HOST_NAME and MINIO_HOST_NAME are defined or substituted appropriately during deployment.
-  # For local k8s dev, these might be localhost with port-forwards, or minikube IPs.
-  # For cloud, these are your actual DNS names.
-  # The default value for ${HOST_NAME} could be set if there's a common one.
-  # For now, they are placeholders.
-  # Any variable that is truly an ARG passed to docker build and is sensitive should be in secret.yaml.
-  # NEXT_PUBLIC_GOOGLE_CLIENT_ID_WEB and NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB are here as they are often public.
-  # If their values come from ARGs that are treated as secret (as in secret.yaml), the app should source them from there.
-  # This highlights a common confusion point: ARGs vs runtime env vars, and public vs secret.
-  # For NEXT_PUBLIC_ vars, values must be available at build time for static export, or runtime for SSR/CSR if not statically replaced.
-  # If these are runtime env vars for a server.js, then they are fine.
-  # Given it's a Next.js app, these are likely runtime envs for the server part or build-time for static parts.
-  # The Dockerfile ARGs listed in the secret.yaml for `app` were:
-  # HASURA_GRAPHQL_ADMIN_SECRET, GOOGLE_CLIENT_ID_ATOMIC_WEB, GOOGLE_CLIENT_SECRET_ATOMIC_WEB, ZOOM_IV_FOR_PASS, ZOOM_PASS_KEY.
-  # So, GOOGLE_CLIENT_ID_ATOMIC_WEB should be sourced from secret if it's the ARG.
-  # If NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB is a *different* variable for client-side use, it's fine here.
-  # Assuming NEXT_PUBLIC_ prefixed ones here are distinct or public.
-  # If GOOGLE_CLIENT_ID_ATOMIC_WEB (from secret) is intended for NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB,
-  # the deployment should map it. For now, keeping them separate as per typical Next.js patterns.
-  # (i.e. build ARGs might be different from runtime NEXT_PUBLIC_ vars)
-
-  # Final check on compose envs for 'app' service:
-  # HOST_NAME: "localhost:8080" -> placeholder, covered by ${HOST_NAME} concept
-  # MINIO_HOST_NAME: "localhost:9000" -> placeholder, covered by ${MINIO_HOST_NAME} concept
-  # All others are NEXT_PUBLIC_ and are included above.
-  # The values for POSTHOG_KEY, STRIPE_KEY, SENTRY_DSN, GOOGLE_ANALYTICS_ID are empty here,
-  # they should be filled or moved to secrets if sensitive. For now, they are as per compose (empty or placeholder).
-  # Public keys like Stripe publishable key are fine here. Sentry DSN sometimes is public, sometimes not.
-  # PostHog key is usually public.
-  PORT: "3000" # Consistent with other Next.js apps
-  NODE_ENV: "production" # Consistent
-  LOG_LEVEL: "info" # Consistent
-  # Adding HOST_NAME and MINIO_HOST_NAME as simple placeholders here for completeness,
-  # though they are more "meta" variables to be replaced by actual infrastructure values.
-  HOST_NAME_PLACEHOLDER: "app.yourdomain.com"
-  MINIO_HOST_NAME_PLACEHOLDER: "minio.yourdomain.com" # Or app.yourdomain.com/minio if using path-based routing
-  # These are not used by the app directly but represent the values that should replace ${HOST_NAME} etc.
-  # The app will use the NEXT_PUBLIC_ variables which *contain* these placeholders.
-  # The actual substitution into ${HOST_NAME} happens at deployment/Ingress config time.
+  # The variables like ${HOST_NAME} and ${MINIO_HOST_NAME} are conceptual placeholders.
+  # In a K8s setup, these would be actual domain names configured via Ingress and DNS.
+  # The ConfigMap stores the string with the placeholder; substitution happens elsewhere or
+  # the application is built to handle such placeholders if they are truly dynamic at runtime.
+  # For Next.js, these are typically build-time or server-runtime available. Client-side needs fully resolved URLs.
+  # Thus, for client-side (NEXT_PUBLIC_), the ${HOST_NAME} should ideally be resolved before the app consumes it,
+  # or the app itself constructs full URLs based on a single NEXT_PUBLIC_APP_URL.
+  # For this base configuration, we assume these values are provided at runtime to the server part of Next.js,
+  # and then made available to the client, or that build-time substitution happens.
+  # The `HOST_NAME` key here is for context; actual substitution into URLs must be handled.

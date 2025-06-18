@@ -6,7 +6,7 @@ metadata:
   labels:
     app: app
 spec:
-  replicas: 1 # Start with 1, can be scaled for a frontend application
+  replicas: 1 # As specified, can be scaled
   selector:
     matchLabels:
       app: app
@@ -17,63 +17,59 @@ spec:
     spec:
       containers:
         - name: app
-          image: "${PROJECT_NAME}-atomic-app:latest" # Placeholder - replace with actual image URL
+          image: "placeholder-atomic-app:latest" # Consistent placeholder name
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
-              containerPort: 3000 # Matches PORT in ConfigMap
+              containerPort: 3000 # Should match PORT in ConfigMap
               protocol: TCP
           envFrom:
             - secretRef:
                 name: app-secret
             - configMapRef:
                 name: app-configmap
-          # Environment variables from Dockerfile ARGs that are in secrets:
-          # These need to be explicitly mapped if their names in the secret are different
-          # from what the application expects, or if they are not covered by NEXT_PUBLIC_ prefixes.
-          # The Dockerfile ARGs for 'app' were:
-          # HASURA_GRAPHQL_ADMIN_SECRET, GOOGLE_CLIENT_ID_ATOMIC_WEB, GOOGLE_CLIENT_SECRET_ATOMIC_WEB, ZOOM_IV_FOR_PASS, ZOOM_PASS_KEY.
-          # These are in app-secret. If the application expects these exact env var names at runtime:
+          # Explicitly map Dockerfile ARGs from app-secret to ensure they are available
+          # with their original names if the application's build or runtime expects them directly,
+          # not just as NEXT_PUBLIC_ variables.
           env:
-            - name: HASURA_GRAPHQL_ADMIN_SECRET # If runtime needs it directly
+            - name: HASURA_GRAPHQL_ADMIN_SECRET # ARG from Dockerfile
               valueFrom:
                 secretKeyRef:
                   name: app-secret
                   key: HASURA_GRAPHQL_ADMIN_SECRET
-            - name: GOOGLE_CLIENT_ID_ATOMIC_WEB # If runtime needs it directly
+            - name: GOOGLE_CLIENT_ID_ATOMIC_WEB # ARG from Dockerfile
               valueFrom:
                 secretKeyRef:
                   name: app-secret
                   key: GOOGLE_CLIENT_ID_ATOMIC_WEB
-            - name: GOOGLE_CLIENT_SECRET_ATOMIC_WEB # If runtime needs it directly
+            - name: GOOGLE_CLIENT_SECRET_ATOMIC_WEB # ARG from Dockerfile
               valueFrom:
                 secretKeyRef:
                   name: app-secret
                   key: GOOGLE_CLIENT_SECRET_ATOMIC_WEB
-            - name: ZOOM_IV_FOR_PASS # If runtime needs it directly
+            - name: ZOOM_IV_FOR_PASS # ARG from Dockerfile
               valueFrom:
                 secretKeyRef:
                   name: app-secret
                   key: ZOOM_IV_FOR_PASS
-            - name: ZOOM_PASS_KEY # If runtime needs it directly
+            - name: ZOOM_PASS_KEY # ARG from Dockerfile
               valueFrom:
                 secretKeyRef:
                   name: app-secret
                   key: ZOOM_PASS_KEY
-            # Note: NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB is in the configmap.
-            # If this should be the same as GOOGLE_CLIENT_ID_ATOMIC_WEB from the secret,
-            # then that NEXT_PUBLIC_ variable in configmap should rather be set here from the secret.
-            # Example:
+            # Note: The ConfigMap contains NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB.
+            # If this should be the *same value* as the ARG GOOGLE_CLIENT_ID_ATOMIC_WEB from the secret,
+            # then the ConfigMap entry is redundant, and the Next.js app should be configured
+            # to use GOOGLE_CLIENT_ID_ATOMIC_WEB (from secret) for its NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB build process.
+            # Or, this env var can be set here to override the ConfigMap one:
             # - name: NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB
             #   valueFrom:
             #     secretKeyRef:
             #       name: app-secret
             #       key: GOOGLE_CLIENT_ID_ATOMIC_WEB
-            # For now, assuming the NEXT_PUBLIC_ one in configmap is separate or correctly sourced during build.
+            # For now, assuming the explicit ARG env vars are needed by the build/runtime,
+            # and NEXT_PUBLIC_ vars in configmap are for client-side values (which might be same or different).
 
-
-          # Probes: Next.js apps in standalone mode usually serve on '/'.
-          # If a specific health check endpoint is available (e.g., /api/health), use that.
           readinessProbe:
             httpGet:
               path: / # Check root path, or a specific health endpoint

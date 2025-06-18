@@ -1,24 +1,29 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# This root kustomization file includes all the base services.
-# Each service subdirectory has its own kustomization.yaml,
-# defining resources and typically its own namespace.
+# This is the root Kustomization file for the 'base' Kubernetes manifests.
+# It aggregates all the individual service components, each defined in its own subdirectory
+# and managed by its own kustomization.yaml file.
+# Applying this kustomization (e.g., `kubectl apply -k deploy/kubernetes/base/`)
+# will deploy all the base services into the cluster, each typically in its own namespace.
 
 resources:
+  # Ingress Controller
+  - ./traefik
+
   # Data Stores & Message Queues
-  - ./postgres
   - ./minio
+  - ./postgres
   - ./kafka # Includes Zookeeper and Kafka Broker
   - ./opensearch
 
   # Authentication & Authorization
   - ./supertokens
-  - ./oauth # Handles OAuth flows
+  - ./oauth # Handles OAuth flows for other services
 
   # Backend Services / Core Logic
   - ./hasura # GraphQL Engine
-  - ./functions # Serverless functions / Microservices
+  - ./functions # Serverless functions / Microservices / Backend logic
   - ./optaplanner # Scheduling service
 
   # Frontend / Edge Services
@@ -26,21 +31,20 @@ resources:
   - ./handshake # Handshake Next.js application
 
 # Common labels and annotations can be defined here to apply to all resources
-# across all included kustomizations if desired, but it's often cleaner
-# to manage them within each component's kustomization or via overlays.
+# across all included kustomizations if desired. However, it's often cleaner
+# to manage them within each component's kustomization or via overlays,
+# especially since each component here has its own namespace.
 #
+# Example (if you wanted to apply these to ALL resources from ALL sub-kustomizations):
 # commonLabels:
 #   environment: base
-#   project: atomic-stack
+#   project: atomic-stack # Replace with your actual project identifier
 #
 # commonAnnotations:
 #   managed-by: kustomize
+#   owner: platform-team
 
-# Note: If a 'traefik' directory with its own kustomization.yaml exists
-# or is added later, it should be added to the resources list here:
-# - ./traefik
-
-# Similarly, if a common namespace is desired for all these base resources
-# (instead of each service having its own), it could be specified here.
-# However, the current setup gives each service its own namespace for modularity.
-# namespace: default-stack # Example if a common namespace was used.
+# Note: The order of resources listed here generally does not affect deployment order
+# for Kustomize, as dependencies are typically managed by Kubernetes itself or
+# through explicit 'dependsOn' annotations if needed for specific CRD readiness, etc.
+# However, grouping them logically (e.g., by type or dependency) can improve readability.

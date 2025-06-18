@@ -6,7 +6,7 @@ metadata:
   labels:
     app: optaplanner
 spec:
-  replicas: 1
+  replicas: 1 # As specified
   selector:
     matchLabels:
       app: optaplanner
@@ -17,33 +17,39 @@ spec:
     spec:
       containers:
         - name: optaplanner
-          image: "${PROJECT_NAME}-atomic-scheduler:latest" # Placeholder - replace with actual image URL
+          image: "placeholder-atomic-scheduler:latest" # Consistent placeholder name
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
-              containerPort: 8081 # Matches QUARKUS_HTTP_PORT in ConfigMap
+              containerPort: 8081 # Should match QUARKUS_HTTP_PORT from ConfigMap
               protocol: TCP
           env:
-            # Quarkus Datasource credentials from Secret
-            - name: QUARKUS_DATASOURCE_USERNAME # User for DB connection
+            # Database credentials from Secret
+            - name: QUARKUS_DATASOURCE_USERNAME # For Quarkus to connect to the DB
               valueFrom:
                 secretKeyRef:
                   name: optaplanner-secret
                   key: POSTGRES_USER
-            - name: QUARKUS_DATASOURCE_PASSWORD # Password for DB connection
+            - name: QUARKUS_DATASOURCE_PASSWORD # For Quarkus to connect to the DB
               valueFrom:
                 secretKeyRef:
                   name: optaplanner-secret
                   key: POSTGRES_PASSWORD
 
-            # Optaplanner application's own API authentication password from Secret
-            - name: PASSWORD # Used by Optaplanner for its /api basic auth or token auth
+            # Optaplanner application's own authentication credentials
+            # USERNAME is from ConfigMap, PASSWORD is from API_TOKEN in Secret
+            - name: USERNAME # For Optaplanner application auth
+              valueFrom:
+                configMapKeyRef:
+                  name: optaplanner-configmap
+                  key: USERNAME
+            - name: PASSWORD # For Optaplanner application auth (maps to API_TOKEN from secret)
               valueFrom:
                 secretKeyRef:
                   name: optaplanner-secret
                   key: API_TOKEN
 
-            # Other datasource and app config from ConfigMap
+            # Other configurations from ConfigMap
             - name: QUARKUS_DATASOURCE_JDBC_URL
               valueFrom:
                 configMapKeyRef:
@@ -54,13 +60,6 @@ spec:
                 configMapKeyRef:
                   name: optaplanner-configmap
                   key: QUARKUS_DATASOURCE_DB-KIND
-            # Note: The username for the datasource is taken from POSTGRES_USER secret directly
-            # The USERNAME in configmap was intended for this, but Quarkus expects QUARKUS_DATASOURCE_USERNAME.
-            # So, we map POSTGRES_USER from secret to QUARKUS_DATASOURCE_USERNAME.
-            # If Optaplanner app has a separate internal "admin" user concept (not DB user),
-            # that would be configured differently, e.g. with app-specific properties.
-            # The prompt's configmap had USERNAME: admin, but for datasource, it must match the actual DB user.
-
             - name: QUARKUS_HTTP_PORT
               valueFrom:
                 configMapKeyRef:
@@ -71,29 +70,13 @@ spec:
                 configMapKeyRef:
                   name: optaplanner-configmap
                   key: QUARKUS_LOG_LEVEL
-
-            # If DB_HOST, DB_PORT, DB_NAME are needed by the app to construct the JDBC URL itself:
-            # - name: DB_HOST
-            #   valueFrom:
-            #     configMapKeyRef:
-            #       name: optaplanner-configmap
-            #       key: DB_HOST
-            # - name: DB_PORT
-            #   valueFrom:
-            #     configMapKeyRef:
-            #       name: optaplanner-configmap
-            #       key: DB_PORT
-            # - name: DB_NAME
-            #   valueFrom:
-            #     configMapKeyRef:
-            #       name: optaplanner-configmap
-            #       key: DB_NAME
+            # Add other env vars from configmap if needed (e.g., QUARKUS_OPTAPLANNER_...)
 
           readinessProbe:
             httpGet:
               path: /q/health/ready # Standard Quarkus readiness probe
               port: http # Port 8081
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15 # Allow time for Quarkus app to start and connect to DB
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
@@ -101,7 +84,7 @@ spec:
             httpGet:
               path: /q/health/live # Standard Quarkus liveness probe
               port: http
-            initialDelaySeconds: 30
+            initialDelaySeconds: 45 # More conservative for liveness
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3

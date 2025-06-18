@@ -6,15 +6,15 @@ metadata:
   labels:
     app: functions
 spec:
-  type: ClusterIP
+  type: ClusterIP # Internal service, not exposed externally by default via LoadBalancer
   selector:
     app: functions # Selects the functions pods
   ports:
     - name: main
       protocol: TCP
-      port: 3000 # Port the service will listen on for main traffic
-      targetPort: main # Name of the port in the Deployment's podSpec (containerPort 3000)
+      port: 3000       # Port the service will listen on for main traffic
+      targetPort: main # Matches the 'main' port name in the Deployment's podSpec (containerPort 3000)
     - name: secondary
       protocol: TCP
-      port: 3030 # Port the service will listen on for secondary traffic
-      targetPort: secondary # Name of the port in the Deployment's podSpec (containerPort 3030)
+      port: 3030       # Port the service will listen on for secondary traffic (e.g., WebSockets)
+      targetPort: secondary # Matches the 'secondary' port name in the Deployment's podSpec (containerPort 3030)

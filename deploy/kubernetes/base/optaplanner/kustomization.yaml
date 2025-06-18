@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: optaplanner
+namespace: optaplanner # Sets the namespace for all resources in this kustomization
 
 resources:
   - namespace.yaml
@@ -10,11 +10,13 @@ resources:
   - deployment.yaml
   - service.yaml
 
-# Optional: Add common labels to all resources
+# Optional: Add common labels to all resources defined in this kustomization
 # commonLabels:
 #   app.kubernetes.io/name: optaplanner
-#   app.kubernetes.io/part-of: atomic-stack
+#   app.kubernetes.io/instance: optaplanner
+#   app.kubernetes.io/component: scheduling-engine
+#   app.kubernetes.io/part-of: atomic-stack # Or your specific application/project name
 
 # Optional: Add common annotations
 # commonAnnotations:
-#   source: "https://github.com/your-repo/atomic-stack"
+#   note: "Optaplanner service base configuration"
