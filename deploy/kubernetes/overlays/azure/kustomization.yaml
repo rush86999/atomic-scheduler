@@ -1,0 +1,60 @@
+# deploy/kubernetes/overlays/azure/kustomization.yaml
+# This Kustomization file defines the Azure-specific overlay for the Kubernetes deployment.
+# It builds upon the 'base' configuration and applies Azure-specific resources and patches.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 1. Include the base configuration
+bases:
+  - ../../base # Points to deploy/kubernetes/base
+
+# 2. List Azure-specific resources to be added or modified.
+#    SecretProviderClasses are specific to this Azure overlay for integrating with Azure Key Vault.
+resources:
+  - resources/secret-provider-classes-azure.yaml
+
+# 3. List patches to apply to the base resources for the Azure environment.
+#    Using patchesStrategicMerge for broad compatibility.
+#    For Kustomize v4+, `patches:` can also be used for plain YAML patches.
+patchesStrategicMerge:
+  # Patch to update secret references in Deployments/StatefulSets to use
+  # Kubernetes Secrets created by SecretProviderClasses that source from Azure Key Vault.
+  - patches/update-secret-references-azure.yaml
+
+  # Patch to add Azure Load Balancer specific annotations to the Traefik service.
+  - patches/traefik-service-azure-annotations.yaml
+
+  # --- Optional: Placeholder for other Azure-specific patches ---
+  # For example, patches to annotate ServiceAccounts for Azure Workload Identity,
+  # or patches to configure Azure-specific storage options for PersistentVolumeClaims.
+  # - patches/serviceaccount-workload-identity-annotations.yaml
+  # - patches/pvc-azure-storage-config.yaml
+  #
+  # Example for Workload Identity (serviceaccount-workload-identity-annotations.yaml):
+  #   apiVersion: v1
+  #   kind: ServiceAccount
+  #   metadata:
+  #     name: <service-account-name>
+  #     namespace: <namespace>
+  #     annotations:
+  #       azure.workload.identity/client-id: "YOUR_AZURE_AD_APP_CLIENT_ID"
+  #       azure.workload.identity/tenant-id: "YOUR_AZURE_TENANT_ID"
+  #     labels: # Required for webhook to inject details
+  #       azure.workload.identity/use: "true"
+
+
+# Images: Overlays can also be used to update image tags or registries for Azure Container Registry (ACR).
+# Example:
+# images:
+#   - name: placeholder-image-name # As defined in the base deployment
+#     newName: youracreg.azurecr.io/imagename # New image URI for ACR
+#     newTag: specific-tag-for-azure # New image tag for Azure
+
+# Common Labels or Annotations for this overlay (optional)
+# commonLabels:
+#   cloud-provider: azure
+#   overlay: azure-specific
+#
+# commonAnnotations:
+#   note: "Configuration specific to Azure deployment environment"
