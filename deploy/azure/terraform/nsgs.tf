@@ -1,4 +1,4 @@
-# Variables to be defined in variables.tf or passed as input
+# --- Variables ---
 variable "azure_region" {
   description = "The Azure region where resources will be deployed."
   type        = string
@@ -14,9 +14,11 @@ variable "project_name" {
   type        = string
 }
 
-variable "aks_subnet_cidr" {
+variable "aks_subnet_cidr" { # Used as a source for rules targeting the DB NSG
   description = "The CIDR block of the AKS subnet. Used to allow traffic from AKS to other resources like the database."
   type        = string
+  # This would typically be sourced from the vnet.tf output or a common variable if subnets are predefined.
+  # Example: default = "10.1.1.0/24"
 }
 
 # --- Network Security Group for AKS Subnet ---
@@ -31,20 +33,19 @@ resource "azurerm_network_security_group" "aks_subnet_nsg" {
     terraform   = "true"
   }
 
-  # Default outbound rule (Azure allows all outbound by default unless overridden)
-  # security_rule {
-  #   name                       = "AllowInternetOutbound"
-  #   priority                   = 100
-  #   direction                  = "Outbound"
-  #   access                     = "Allow"
-  #   protocol                   = "*"
-  #   source_port_range          = "*"
-  #   destination_port_range     = "*"
-  #   source_address_prefix      = "*" # Or specific to the VNet/Subnet
-  #   destination_address_prefix = "Internet"
-  # }
+  # --- Outbound Security Rules for AKS Subnet ---
+  security_rule {
+    name                       = "AllowInternetOutbound"
+    priority                   = 100
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = var.aks_subnet_cidr # Or "VirtualNetwork" or "*" if less restrictive needed
+    destination_address_prefix = "Internet"
+  }
 
-  # Allow outbound to Azure Container Registry (if used)
   security_rule {
     name                       = "AllowAcrOutbound"
     priority                   = 110
@@ -53,11 +54,10 @@ resource "azurerm_network_security_group" "aks_subnet_nsg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "443" # HTTPS for ACR
-    source_address_prefix      = var.aks_subnet_cidr # Or "VirtualNetwork"
+    source_address_prefix      = var.aks_subnet_cidr
     destination_address_prefix = "AzureContainerRegistry" # Service Tag for ACR
   }
 
-  # Allow outbound to Azure Key Vault (if used)
   security_rule {
     name                       = "AllowKeyVaultOutbound"
     priority                   = 120
@@ -66,68 +66,54 @@ resource "azurerm_network_security_group" "aks_subnet_nsg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "443" # HTTPS for Key Vault
-    source_address_prefix      = var.aks_subnet_cidr # Or "VirtualNetwork"
+    source_address_prefix      = var.aks_subnet_cidr
     destination_address_prefix = "AzureKeyVault" # Service Tag for Key Vault
   }
 
-  # Allow outbound to Azure Monitor (if used by AKS for logging/metrics)
   security_rule {
     name                       = "AllowAzureMonitorOutbound"
     priority                   = 130
     direction                  = "Outbound"
     access                     = "Allow"
-    protocol                   = "Tcp" # Primarily TCP, some UDP might be used by agents
+    protocol                   = "*" # Azure Monitor uses TCP and UDP
     source_port_range          = "*"
-    destination_port_ranges    = ["443", "12000"] # Common ports for Azure Monitor
+    destination_port_ranges    = ["443", "12000"] # Common ports for Azure Monitor (HTTPS and OMS Gateway)
     source_address_prefix      = var.aks_subnet_cidr
     destination_address_prefix = "AzureMonitor" # Service Tag
   }
 
-
-  # Inbound rules for AKS Subnet
-  # Allow inbound traffic from Azure Load Balancer (for services exposed via LoadBalancer type)
-  # This is often for HTTP/HTTPS traffic to ingresses or services.
+  # --- Inbound Security Rules for AKS Subnet ---
   security_rule {
-    name                       = "AllowLoadBalancerInbound"
+    name                       = "AllowLoadBalancerInbound" # For traffic from Azure LB to nodes/pods
     priority                   = 200
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_ranges    = ["80", "443"] # Common web ports, adjust as needed
+    destination_port_ranges    = ["80", "443"] # Common web ports, adjust as needed for your applications
     source_address_prefix      = "AzureLoadBalancer" # Service Tag for Azure Load Balancer
-    destination_address_prefix = var.aks_subnet_cidr     # Or "VirtualNetwork"
+    destination_address_prefix = var.aks_subnet_cidr
   }
 
-  # Allow node-to-node communication within the VNet (covers the AKS subnet)
-  # AKS nodes often need to communicate with each other for pod networking, kubelet, etc.
   security_rule {
-    name                       = "AllowVnetInbound" # Renamed from AllowNodeToNodeInSubnet for clarity
+    name                       = "AllowVnetToVnetInbound" # For node-to-node and pod-to-pod within the VNet
     priority                   = 210
     direction                  = "Inbound"
     access                     = "Allow"
-    protocol                   = "*" # Allow all protocols for internal VNet comms
+    protocol                   = "*" # Allow all protocols for internal VNet communication
     source_port_range          = "*"
     destination_port_range     = "*"
     source_address_prefix      = "VirtualNetwork" # Service Tag representing the entire VNet
     destination_address_prefix = "VirtualNetwork" # Service Tag
   }
 
-  # Optional: If nodes need to reach Kubernetes API server via its private IP (if VNet integrated and private cluster)
-  # security_rule {
-  #   name                       = "AllowKubeApiServerInbound" # This rule might be if API server is in a different subnet but same VNet
-  #   priority                   = 220
-  #   direction                  = "Inbound" # Or Outbound if it's nodes reaching API
-  #   access                     = "Allow"
-  #   protocol                   = "Tcp"
-  #   source_port_range          = "*"
-  #   destination_port_range     = "443" # Or the specific private Kube API port
-  #   source_address_prefix      = "YOUR_KUBE_API_SERVER_PRIVATE_IP_OR_SUBNET_CIDR" # If applicable
-  #   destination_address_prefix = var.aks_subnet_cidr
-  # }
-  # Note: AKS typically manages rules for control plane communication.
-  # If using Azure CNI, AKS might create/manage NSGs on NICs directly.
-  # This subnet-level NSG serves as an additional layer or for Kubenet.
+  # Note on AKS Control Plane Communication:
+  # - If using a public AKS cluster, nodes typically communicate with the control plane over its public endpoint.
+  #   Outbound internet access (already allowed) usually covers this.
+  # - If using a private AKS cluster, specific rules might be needed if the control plane is in a different subnet
+  #   or if UDRs (User Defined Routes) are used. AKS often manages necessary rules for its components.
+  # - Azure CNI can also create and manage NSGs directly on node network interfaces, potentially overriding or
+  #   supplementing subnet-level NSGs. This NSG acts as a baseline or additional security layer.
 }
 
 # --- Network Security Group for Database Subnet (e.g., Azure PostgreSQL) ---
@@ -142,7 +128,7 @@ resource "azurerm_network_security_group" "db_subnet_nsg" {
     terraform   = "true"
   }
 
-  # Allow inbound PostgreSQL traffic ONLY from the AKS subnet
+  # --- Inbound Security Rules for Database Subnet ---
   security_rule {
     name                       = "AllowPostgresInboundFromAKS"
     priority                   = 100
@@ -151,61 +137,89 @@ resource "azurerm_network_security_group" "db_subnet_nsg" {
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "5432" # PostgreSQL port
-    source_address_prefix      = var.aks_subnet_cidr # CIDR of the AKS subnet
-    destination_address_prefix = "*" # Or the specific CIDR of the DB subnet
+    source_address_prefix      = var.aks_subnet_cidr # Restrict to AKS subnet CIDR
+    destination_address_prefix = "*"                 # Or specific DB subnet CIDR if known and different from source
   }
+  # Default DenyAllInBound rule (priority 65500) in Azure NSGs will block other inbound traffic.
 
-  # Deny all other inbound traffic (Azure NSGs have a default DenyAllInBound rule at priority 65500 if no other rules match)
-  # No explicit deny rule needed here unless overriding default behavior or needing higher priority deny.
-
-  # Allow outbound traffic from DB subnet (as needed by the database)
-  # Example: Allow outbound to Azure Storage for backups (if Azure PostgreSQL is configured for this)
+  # --- Outbound Security Rules for Database Subnet ---
   security_rule {
-    name                       = "AllowDbOutboundToAzureStorage"
+    name                       = "AllowDbOutboundToAzureStorage" # For backups, logs, etc.
     priority                   = 100
     direction                  = "Outbound"
     access                     = "Allow"
-    protocol                   = "Tcp"
+    protocol                   = "Tcp" # HTTPS for Azure Storage
     source_port_range          = "*"
-    destination_port_range     = "443" # HTTPS for Azure Storage
-    source_address_prefix      = "*"   # Or specific DB subnet CIDR
+    destination_port_range     = "443"
+    source_address_prefix      = "*" # Or specific DB subnet CIDR
     destination_address_prefix = "Storage" # Service Tag for Azure Storage
   }
 
-  # Example: Allow outbound for DNS resolution if not using default Azure DNS
+  security_rule {
+    name                       = "AllowDbOutboundToAzureMonitor" # For DB metrics and logs
+    priority                   = 110
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "*" # TCP and UDP
+    source_port_range          = "*"
+    destination_port_ranges    = ["443", "12000"]
+    source_address_prefix      = "*" # Or specific DB subnet CIDR
+    destination_address_prefix = "AzureMonitor"
+  }
+
+  # Optional: Allow outbound for DNS if not using default Azure DNS and DB needs external resolution for some reason
   # security_rule {
-  #   name                       = "AllowDnsOutbound"
-  #   priority                   = 110
+  #   name                       = "AllowDnsOutboundForDb"
+  #   priority                   = 120
   #   direction                  = "Outbound"
   #   access                     = "Allow"
   #   protocol                   = "Udp"
   #   source_port_range          = "*"
   #   destination_port_range     = "53"
   #   source_address_prefix      = "*"
-  #   destination_address_prefix = "YOUR_DNS_SERVER_IPS" # e.g., "168.63.129.16" for Azure DNS
+  #   destination_address_prefix = "AzureCloud" # Or specific DNS server IPs
   # }
-
-  # Allow outbound to Azure Monitor (if DB sends logs/metrics)
-  security_rule {
-    name                       = "AllowDbOutboundToAzureMonitor"
-    priority                   = 120
-    direction                  = "Outbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_ranges    = ["443", "12000"]
-    source_address_prefix      = "*" # Or specific DB subnet CIDR
-    destination_address_prefix = "AzureMonitor"
-  }
+  # Default AllowVnetOutbound and AllowInternetOutbound (if not overridden by a Deny rule) might cover some needs.
+  # It's best to be explicit for PaaS database outbound needs.
 }
 
-# Outputs (optional, but useful)
-output "aks_subnet_nsg_id" {
-  description = "The ID of the AKS Subnet Network Security Group."
-  value       = azurerm_network_security_group.aks_subnet_nsg.id
+# --- (Optional) Subnet Network Security Group Associations ---
+# These resources link the NSGs defined above to specific subnets created in vnet.tf.
+# This association can also be done within the azurerm_subnet resource itself using the
+# `network_security_group_id` argument, but doing it separately here can be cleaner for some workflows.
+# Ensure that the subnet names (`var.aks_subnet_name`, `var.db_subnet_name`) are passed as variables
+# or derived correctly if this block is uncommented.
+
+/*
+variable "aks_subnet_id" {
+  description = "The ID of the AKS subnet to associate with the AKS NSG."
+  type        = string
 }
 
-output "db_subnet_nsg_id" {
-  description = "The ID of the Database Subnet Network Security Group."
-  value       = azurerm_network_security_group.db_subnet_nsg.id
+variable "db_subnet_id" {
+  description = "The ID of the Database subnet to associate with the DB NSG."
+  type        = string
 }
+
+resource "azurerm_subnet_network_security_group_association" "aks_subnet_nsg_assoc" {
+  subnet_id                 = var.aks_subnet_id
+  network_security_group_id = azurerm_network_security_group.aks_subnet_nsg.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "db_subnet_nsg_assoc" {
+  subnet_id                 = var.db_subnet_id
+  network_security_group_id = azurerm_network_security_group.db_subnet_nsg.id
+}
+*/
+
+# --- Outputs (typically in outputs.tf) ---
+# Moved to outputs.tf as per best practice.
+# output "aks_subnet_nsg_id" {
+#   description = "The ID of the AKS Subnet Network Security Group."
+#   value       = azurerm_network_security_group.aks_subnet_nsg.id
+# }
+#
+# output "db_subnet_nsg_id" {
+#   description = "The ID of the Database Subnet Network Security Group."
+#   value       = azurerm_network_security_group.db_subnet_nsg.id
+# }
