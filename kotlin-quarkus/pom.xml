@@ -193,6 +193,10 @@
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>${version.compiler.plugin}</version>
+        <configuration>
+          <meminitial>1024m</meminitial>
+          <maxmem>2048m</maxmem>
+        </configuration>
       </plugin>
       <plugin>
         <artifactId>maven-surefire-plugin</artifactId>
