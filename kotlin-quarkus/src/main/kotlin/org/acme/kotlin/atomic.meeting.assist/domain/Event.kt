@@ -4,6 +4,9 @@ import org.hibernate.annotations.FetchMode
 import org.optaplanner.core.api.domain.lookup.PlanningId
 import java.util.*
 import javax.persistence.*
+import javax.validation.Valid
+import javax.validation.constraints.NotBlank
+import javax.validation.constraints.NotNull
 
 @Entity
 @Table(name="event_optaplanner", indexes = [
@@ -13,16 +16,20 @@ import javax.persistence.*
 class Event {
     @PlanningId
     @Id
+    @field:NotBlank(message = "Event id must not be blank")
     lateinit var id: String
 
+    @field:NotNull(message = "Event userId must not be null")
     lateinit var userId: UUID
 
+    @field:NotNull(message = "Event hostId must not be null")
     lateinit var hostId: UUID
 
-    @OneToMany(fetch = FetchType.EAGER)
-    @Fetch(value = FetchMode.SUBSELECT)
+    @OneToMany(fetch = FetchType.LAZY) // Changed to LAZY
+    // @Fetch(value = FetchMode.SUBSELECT) // SUBSELECT is often used with EAGER, less critical for LAZY
     @JoinColumn(name = "eventId", referencedColumnName = "id", insertable = false, updatable = false)
-    var preferredTimeRanges: MutableList<PreferredTimeRange>? = null
+    @field:Valid // Validate each PreferredTimeRange in the list
+    var preferredTimeRanges: MutableList<PreferredTimeRange>? = null // List itself can be null or empty
 
 
     // No-arg constructor required for Hibernate and Opta Planner

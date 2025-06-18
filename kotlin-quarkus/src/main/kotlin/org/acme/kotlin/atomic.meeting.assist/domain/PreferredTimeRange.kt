@@ -5,6 +5,7 @@ import java.time.DayOfWeek
 import java.time.LocalTime
 import java.util.*
 import javax.persistence.*
+import javax.validation.constraints.NotNull
 
 @Entity
 @Table(name="preferredTimeRange_optaplanner", indexes = [
@@ -18,14 +19,19 @@ class PreferredTimeRange {
     @GeneratedValue
     var id: Long? = null
 
+    @field:NotNull(message = "PreferredTimeRange eventId must not be null")
     lateinit var eventId: String
+    @field:NotNull(message = "PreferredTimeRange userId must not be null")
     lateinit var userId: UUID
+    @field:NotNull(message = "PreferredTimeRange hostId must not be null")
     lateinit var hostId: UUID
 
-    var dayOfWeek: DayOfWeek? = null
+    var dayOfWeek: DayOfWeek? = null // Optional, so no @NotNull
 
+    @field:NotNull(message = "PreferredTimeRange startTime must not be null")
     lateinit var startTime: LocalTime
 
+    @field:NotNull(message = "PreferredTimeRange endTime must not be null")
     lateinit var endTime: LocalTime
 
     // No-arg constructor required for Hibernate
