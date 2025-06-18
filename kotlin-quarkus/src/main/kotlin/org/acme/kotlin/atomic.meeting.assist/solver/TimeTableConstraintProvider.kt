@@ -1,6 +1,7 @@
 package org.acme.kotlin.atomic.meeting.assist.solver
 
 import org.acme.kotlin.atomic.meeting.assist.domain.EventPart
+import org.acme.kotlin.atomic.meeting.assist.domain.EventType
 import org.acme.kotlin.atomic.meeting.assist.domain.User
 import org.optaplanner.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore
 import org.optaplanner.core.api.score.stream.Constraint
@@ -36,6 +37,7 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 // Removed notPreferredStartTimeOfTimeRangesHardPenalize - keeping Medium
                 // Removed notPreferredEndTimeOfTimeRangesHardPenalize - keeping Medium
                 meetingWithSameEventSlotHardConflict(constraintFactory),
+                taskWithinWorkingHours(constraintFactory),
 
                 // Medium constraints
                 higherPriorityEventsSoonerForTimeOfDayMediumPenalize(constraintFactory),
@@ -62,7 +64,97 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 // Removed notPreferredEndTimeOfTimeRangesSoftPenalize - keeping Medium
                 maxWorkloadConflictSoftPenalize(constraintFactory),
                 minNumberOfBreaksConflictSoftPenalize(constraintFactory),
+                prioritizeTasksWithEarlierDeadlines(constraintFactory),
         )
+    }
+
+    private fun prioritizeTasksWithEarlierDeadlines(constraintFactory: ConstraintFactory): Constraint {
+        return constraintFactory
+            .forEach(EventPart::class.java)
+            .filter { eventPart ->
+                eventPart.event.eventType == EventType.TASK &&
+                eventPart.hardDeadline != null && // Only consider tasks with a hard deadline
+                eventPart.timeslot != null &&
+                eventPart.timeslot?.date != null &&
+                eventPart.timeslot?.startTime != null
+            }
+            .penalize("Prioritize tasks with earlier deadlines",
+                      HardMediumSoftScore.ONE_SOFT,
+                      eventPart -> {
+                          // Calculate the difference in days between the scheduled start and the deadline.
+                          // The smaller the difference, the higher the penalty if it's not scheduled early.
+                          // This is a simple way to encourage earlier scheduling for tighter deadlines.
+                          // A more sophisticated approach might consider the actual duration to the deadline.
+                          val scheduledDateTime = LocalDateTime.of(eventPart.timeslot!!.date, eventPart.timeslot!!.startTime)
+                          val deadlineDateTime = eventPart.hardDeadline!!
+
+                          // We want to penalize scheduling a task later if its deadline is sooner.
+                          // This logic might need refinement. A simpler penalty might be just for being close to the deadline.
+                          // For now, let's penalize based on how late it is relative to its deadline proximity.
+                          // This is tricky. A simpler approach: penalize by the number of days from now until deadline.
+                          // The closer the deadline, the more important it is to schedule.
+                          // This requires a "current date" context, which OptaPlanner doesn't directly provide in constraints.
+                          //
+                          // Alternative: Penalize tasks scheduled *later* that have *earlier* deadlines
+                          // This requires comparing two tasks.
+
+                          // Let's try a simpler penalty: Penalize based on how late the task is scheduled,
+                          // weighted by the inverse of the time to its deadline.
+                          // This is still complex.
+
+                          // Simplest initial approach: Penalize more if the deadline is soon and the task is not scheduled.
+                          // However, this constraint is on an *assigned* EventPart.
+                          // So, the task *is* scheduled. We want to encourage it to be scheduled *earlier* if its deadline is *sooner*.
+
+                          // Let's consider the number of days from the scheduled start to the deadline.
+                          // If a task due tomorrow is scheduled today, that's good.
+                          // If a task due next week is scheduled today, that's also good, but less critical.
+                          // This constraint should penalize tasks with *earlier* deadlines that are scheduled *later* than other tasks.
+
+                          // This requires a comparison. Let's use a simpler per-task penalty for now:
+                          // Penalize tasks if their start date is "late" relative to their deadline.
+                          // What is "late"? Perhaps a percentage of the time between creation and deadline?
+                          // This is also getting complex.
+
+                          // Let's use a very simple penalty: the number of days from the start of the planning window
+                          // to the start of the task. The later it's scheduled, the higher the penalty, but this should be
+                          // scaled by deadline proximity.
+
+                          // Simplest penalty: Number of hours between scheduled start and deadline.
+                          // We want to REWARD tasks that are further from their deadline,
+                          // or PENALIZE tasks that are closer to their deadline.
+                          // Let's penalize based on the number of hours from scheduled start to deadline.
+                          // The fewer hours, the higher the penalty (because it's "last minute").
+                          // No, this is the opposite. We want to penalize tasks that *could* have been scheduled earlier but weren't.
+
+                          // Let's penalize the *lateness* of the task.
+                          // Lateness = Scheduled Start Time - Reference Time (e.g. today)
+                          // And this penalty should be higher for tasks with earlier deadlines.
+
+                          // For now, a simple penalty: just the number of days until the deadline.
+                          // This isn't quite right. We want to penalize scheduling a task with an early deadline LATE.
+
+                          // Let's use the number of days the task is scheduled before its deadline.
+                          // If it's scheduled far in advance, the penalty is low.
+                          // If it's scheduled close to the deadline, the penalty is high.
+                          // Constraint should penalize tasks that are scheduled close to their hard deadline.
+                          // The penalty is higher if the task is scheduled closer to its deadline.
+                          val scheduledStartDateTime = LocalDateTime.of(eventPart.timeslot!!.date!!, eventPart.timeslot!!.startTime!!)
+                          val durationToDeadline = Duration.between(scheduledStartDateTime, eventPart.hardDeadline!!)
+
+                          // Penalize more if durationToDeadline is small.
+                          // Avoid division by zero or negative durations if scheduled after deadline (hard constraint should catch that).
+                          if (durationToDeadline.isNegative || durationToDeadline.isZero) {
+                              return 1000 // High penalty if at or after deadline (though another hard constraint should handle this)
+                          }
+                          // The smaller the duration, the larger the penalty. Inverse relationship.
+                          // Add 1 to avoid issues with very small fractions if duration is large.
+                          // Cap the penalty to avoid excessively large numbers.
+                          // Maximize (1 / hours_to_deadline)
+                          val hoursToDeadline = durationToDeadline.toHours().toInt()
+                          if (hoursToDeadline <= 0) return 100 // High penalty if very close or past
+                          return 100 / hoursToDeadline // Example: 100/1 = 100, 100/24 = 4, 100/168 (week) = 0
+                      })
     }
 
     // Helper for preferred start times
@@ -169,9 +261,10 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 EventPart::class.java,
                 Joiners.equal(EventPart::timeslot),
             )
-            .filter { eventPart1: EventPart, eventPart2: EventPart ->
-                (((eventPart1.meetingId != null) && (eventPart2.meetingId == null))
-                        || ((eventPart2.meetingId != null) && (eventPart1.meetingId == null)))
+            .filter { ep1: EventPart, ep2: EventPart ->
+                val ep1IsMeeting = ep1.event.eventType == EventType.ONE_ON_ONE_MEETING || ep1.event.eventType == EventType.GROUP_MEETING
+                val ep2IsMeeting = ep2.event.eventType == EventType.ONE_ON_ONE_MEETING || ep2.event.eventType == EventType.GROUP_MEETING
+                (ep1IsMeeting && !ep2IsMeeting) || (!ep1IsMeeting && ep2IsMeeting)
             }
             .penalize("Meetings should not be same timeslot as another event penalize hard", HardMediumSoftScore.ONE_HARD)
     }
@@ -179,7 +272,10 @@ class TimeTableConstraintProvider : ConstraintProvider {
     fun meetingNotSameTimeSlotHardConflict(constraintFactory: ConstraintFactory): Constraint {
         return constraintFactory
             .forEach(EventPart::class.java)
-            .filter { eventPart: EventPart -> eventPart.meetingId != null }
+            .filter { eventPart: EventPart ->
+                eventPart.meetingId != null &&
+                (eventPart.event.eventType == EventType.ONE_ON_ONE_MEETING || eventPart.event.eventType == EventType.GROUP_MEETING)
+            }
             .join(
                 EventPart::class.java,
                 Joiners.equal(EventPart::meetingId),
@@ -278,7 +374,12 @@ class TimeTableConstraintProvider : ConstraintProvider {
 
                 // Simplified: Penalize if any two parts of the same event are on different days or monthDays.
                 // The detailed contiguity and gap checks are handled by sequentialEventPartsDisconnectedByTimeHardPenalize.
-                (ts1.dayOfWeek != ts2.dayOfWeek) || (ts1.monthDay != ts2.monthDay)
+                // Apply "different day" penalty only if NOT a task
+                if (eventPart1.event.eventType != EventType.TASK && eventPart2.event.eventType != EventType.TASK) {
+                    (ts1.dayOfWeek != ts2.dayOfWeek) || (ts1.monthDay != ts2.monthDay)
+                } else {
+                    false // Do not penalize tasks for being on different days/monthDays
+                }
             }
             .penalize("Event parts on different days hard penalize", HardMediumSoftScore.ONE_HARD) // Renamed for clarity
 
@@ -307,7 +408,12 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 // Penalize if the first and last parts are on different days or monthDays.
                 // Duration checks are removed as they were based on flawed uniform duration assumption.
                 // Contiguity is handled by sequentialEventPartsDisconnectedByTimeHardPenalize.
-                (ts1.dayOfWeek != ts2.dayOfWeek) || (ts1.monthDay != ts2.monthDay)
+                // Apply "different day" penalty only if NOT a task
+                if (eventPart1.event.eventType != EventType.TASK && eventPart2.event.eventType != EventType.TASK) {
+                    (ts1.dayOfWeek != ts2.dayOfWeek) || (ts1.monthDay != ts2.monthDay)
+                } else {
+                    false // Do not penalize tasks
+                }
             }
             .penalize("First and last part on different days hard penalize", HardMediumSoftScore.ONE_HARD) // Renamed for clarity
 
@@ -338,7 +444,12 @@ class TimeTableConstraintProvider : ConstraintProvider {
                     // Given the original `!!`, nulls were not expected to proceed.
                     return@filter ts1?.monthDay != ts2?.monthDay // True if one is null and other isn't. False if both are null.
                 }
-                ts1.monthDay != ts2.monthDay
+                // Apply "different monthDay" penalty only if NOT a task
+                if (eventPart1.event.eventType != EventType.TASK && eventPart2.event.eventType != EventType.TASK) {
+                    ts1.monthDay != ts2.monthDay
+                } else {
+                    false // Do not penalize tasks
+                }
             }
             .penalize("Event parts on different monthDays hard penalize", HardMediumSoftScore.ONE_HARD)
 
@@ -435,6 +546,25 @@ class TimeTableConstraintProvider : ConstraintProvider {
             .penalize("missed hard Deadline hard penalize", HardMediumSoftScore.ONE_HARD)
     }
 
+    private fun taskWithinWorkingHours(constraintFactory: ConstraintFactory): Constraint {
+        return constraintFactory
+            .forEach(EventPart::class.java)
+            .filter { eventPart -> eventPart.event.eventType == EventType.TASK }
+            .filter { eventPart ->
+                val timeslot = eventPart.timeslot
+                if (timeslot?.dayOfWeek == null || timeslot.startTime == null || timeslot.endTime == null) {
+                    return@filter true // Penalize if timeslot info is missing for a task
+                }
+                val workTime = eventPart.user.workTimes.find { it.dayOfWeek == timeslot.dayOfWeek }
+                if (workTime == null || workTime.startTime == null || workTime.endTime == null) {
+                    return@filter true // Penalize if no work time defined for the day or start/end time is null
+                }
+                // Check if task part is outside working hours
+                (timeslot.startTime < workTime.startTime || timeslot.endTime > workTime.endTime)
+            }
+            .penalize("Task scheduled outside working hours", HardMediumSoftScore.ONE_HARD)
+    }
+
     fun modifiableConflictHardPenalize(constraintFactory: ConstraintFactory): Constraint {
         return constraintFactory
             .forEach(EventPart::class.java)
@@ -504,6 +634,7 @@ class TimeTableConstraintProvider : ConstraintProvider {
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart -> !(eventPart.dailyTaskList) }
             .filter { eventPart: EventPart -> !(eventPart.weeklyTaskList) }
+            .filter { eventPart: EventPart -> eventPart.event.eventType != EventType.TASK } // Added for clarity
             .filter { eventPart: EventPart -> !(eventPart.gap) }
             .filter { eventPart: EventPart -> eventPart.forEventId == null }
             .filter { eventPart: EventPart -> eventPart.preferredDayOfWeek == null }
@@ -757,7 +888,7 @@ class TimeTableConstraintProvider : ConstraintProvider {
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart ->
                 !eventPart.isMeetingModifiable &&
-                eventPart.isMeeting &&
+                (eventPart.event.eventType == EventType.ONE_ON_ONE_MEETING || eventPart.event.eventType == EventType.GROUP_MEETING) &&
                 eventPart.part == 1 &&
                 eventPart.startDate != null && // This is LocalDateTime now
                 eventPart.timeslot != null &&
@@ -813,7 +944,7 @@ class TimeTableConstraintProvider : ConstraintProvider {
         return constraintFactory
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart -> eventPart.user.backToBackMeetings == true }
-            .filter { eventPart: EventPart -> (eventPart.isMeeting || eventPart.meetingId != null) }
+            .filter { eventPart: EventPart -> (eventPart.event.eventType == EventType.ONE_ON_ONE_MEETING || eventPart.event.eventType == EventType.GROUP_MEETING) }
             .join(EventPart::class.java,
                 Joiners.equal { eventPart: EventPart -> eventPart.timeslot?.monthDay },
                 Joiners.equal(EventPart::userId)
@@ -834,7 +965,7 @@ class TimeTableConstraintProvider : ConstraintProvider {
         return constraintFactory
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart -> !eventPart.user.backToBackMeetings }
-            .filter { eventPart: EventPart -> eventPart.isMeeting }
+            .filter { eventPart: EventPart -> (eventPart.event.eventType == EventType.ONE_ON_ONE_MEETING || eventPart.event.eventType == EventType.GROUP_MEETING) }
             .join(EventPart::class.java,
                 Joiners.equal { eventPart: EventPart -> eventPart.timeslot?.monthDay },
                 Joiners.equal(EventPart::userId)
@@ -874,7 +1005,7 @@ class TimeTableConstraintProvider : ConstraintProvider {
     fun maxNumberOfMeetingsConflictMediumPenalize(constraintFactory: ConstraintFactory): Constraint {
         return constraintFactory
             .forEach(EventPart::class.java)
-            .filter(EventPart::isMeeting)
+            .filter { ep: EventPart -> ep.event.eventType == EventType.ONE_ON_ONE_MEETING || ep.event.eventType == EventType.GROUP_MEETING }
             .filter { eventPart: EventPart -> eventPart.part == 1}
             .groupBy(
                 { eventPart: EventPart -> eventPart.timeslot?.monthDay },

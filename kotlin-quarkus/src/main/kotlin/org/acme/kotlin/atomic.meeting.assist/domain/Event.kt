@@ -1,4 +1,5 @@
 package org.acme.kotlin.atomic.meeting.assist.domain
+import org.acme.kotlin.atomic.meeting.assist.domain.EventType // Added import
 import org.hibernate.annotations.Fetch
 import org.hibernate.annotations.FetchMode
 import org.optaplanner.core.api.domain.lookup.PlanningId
@@ -25,6 +26,9 @@ class Event {
     @field:NotNull(message = "Event hostId must not be null")
     lateinit var hostId: UUID
 
+    @field:NotNull(message = "Event eventType must not be null") // Added field
+    lateinit var eventType: EventType // Added field
+
     @OneToMany(fetch = FetchType.LAZY) // Changed to LAZY
     // @Fetch(value = FetchMode.SUBSELECT) // SUBSELECT is often used with EAGER, less critical for LAZY
     @JoinColumn(name = "eventId", referencedColumnName = "id", insertable = false, updatable = false)
@@ -35,11 +39,12 @@ class Event {
     // No-arg constructor required for Hibernate and Opta Planner
     constructor()
 
-    constructor(id: String, preferredTimeRanges: MutableList<PreferredTimeRange>?, userId: UUID, hostId: UUID) {
+    constructor(id: String, preferredTimeRanges: MutableList<PreferredTimeRange>?, userId: UUID, hostId: UUID, eventType: EventType) { // Added eventType to constructor
         this.id = id
         this.preferredTimeRanges = preferredTimeRanges
         this.userId = userId
         this.hostId = hostId
+        this.eventType = eventType // Assigned eventType
     }
 
 }
