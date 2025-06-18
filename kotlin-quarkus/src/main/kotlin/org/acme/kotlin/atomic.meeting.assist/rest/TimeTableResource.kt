@@ -19,6 +19,7 @@ import org.http4k.format.Jackson.json
 import org.optaplanner.core.api.score.ScoreManager
 import org.optaplanner.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore
 import org.optaplanner.core.api.solver.SolverManager
+import java.time.LocalDateTime
 import java.util.*
 import javax.ws.rs.core.Response // Added import for Response.Status
 import javax.annotation.security.RolesAllowed
@@ -77,15 +78,15 @@ data class EventPartDto(
     val groupId: String?, // Changed from UUID?
     val eventId: String?, // Changed from UUID?
     val part: Int?,
-    val lastPart: Int?, // Changed from Boolean?
-    val startDate: String?,
-    val endDate: String?,
-    val taskId: String?, // Changed from UUID?
-    val softDeadline: String?,
-    val hardDeadline: String?,
-    val meetingId: String?, // Changed from UUID?
-    val userId: UUID?, // Changed from String?
-    val hostId: UUID?, // Changed from String?
+    val lastPart: Boolean?,
+    val startDate: LocalDateTime?,
+    val endDate: LocalDateTime?,
+    val taskId: UUID?,
+    val softDeadline: LocalDateTime?,
+    val hardDeadline: LocalDateTime?,
+    val meetingId: UUID?,
+    val userId: String?,
+    val hostId: String?,
     val user: UserDto?, // Assuming UserDto is defined
     val priority: Int?,
     val isPreEvent: Boolean?,
@@ -279,15 +280,15 @@ class TimeTableResource {
                 groupId = ep.groupId, // String
                 eventId = ep.eventId, // String
                 part = ep.part,
-                lastPart = ep.lastPart, // Int
-                startDate = ep.startDate?.toString(),
-                endDate = ep.endDate?.toString(),
-                taskId = ep.taskId, // String?
-                softDeadline = ep.softDeadline?.toString(),
-                hardDeadline = ep.hardDeadline?.toString(),
-                meetingId = ep.meetingId, // String?
-                userId = ep.userId, // UUID
-                hostId = ep.hostId, // UUID
+                lastPart = ep.lastPart,
+                startDate = ep.startDate,
+                endDate = ep.endDate,
+                taskId = ep.taskId,
+                softDeadline = ep.softDeadline,
+                hardDeadline = ep.hardDeadline,
+                meetingId = ep.meetingId,
+                userId = ep.userId?.toString(),
+                hostId = ep.hostId?.toString(),
                 user = userDto,
                 priority = ep.priority,
                 isPreEvent = ep.isPreEvent,

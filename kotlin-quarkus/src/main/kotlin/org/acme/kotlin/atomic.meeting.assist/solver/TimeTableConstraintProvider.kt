@@ -11,6 +11,7 @@ import org.optaplanner.core.api.score.stream.ConstraintProvider
 import org.optaplanner.core.api.score.stream.Joiners
 import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.MonthDay
 
@@ -66,16 +67,23 @@ class TimeTableConstraintProvider : ConstraintProvider {
 
     // Helper for preferred start times
     private fun isOutsidePreferredStartTimeRanges(eventPart: EventPart): Boolean {
-        if (eventPart.event.preferredTimeRanges.isNullOrEmpty() || eventPart.timeslot == null || eventPart.timeslot?.startTime == null || eventPart.timeslot?.dayOfWeek == null) {
-            return false // No preferences to violate or not enough info to check, so not "outside"
+        // Ensure necessary fields are present to perform the check
+        if (eventPart.event.preferredTimeRanges.isNullOrEmpty() ||
+            eventPart.timeslot?.date == null || // Added null check for date
+            eventPart.timeslot?.startTime == null ||
+            eventPart.timeslot?.endTime == null || // endTime also needed for duration
+            eventPart.timeslot?.dayOfWeek == null) {
+            return false // Not enough info or no preferences, so not "outside"
         }
-        if (eventPart.part != 1) { // Only check for the first part of an event
+        // This constraint applies only to the first part of a multi-part event
+        if (eventPart.part != 1) {
             return false
         }
 
         val timeslot = eventPart.timeslot!!
         val workTime = eventPart.user.workTimes.find { wt -> wt.dayOfWeek == timeslot.dayOfWeek }
-            ?: return true // No work time defined for the day, so it's effectively outside any valid range for work
+            ?: return true // No work time for this day, so any timeslot is outside working hours
+
 
         // workTime.endTime is non-nullable (lateinit var endTime: LocalTime)
         // if (workTime.endTime == null) return true // This check is now redundant based on warnings
@@ -91,6 +99,7 @@ class TimeTableConstraintProvider : ConstraintProvider {
             return true // Event exceeds working hours
         }
 
+        // Check against preferred time ranges
         val preferredTimeRanges = eventPart.event.preferredTimeRanges!!
         var countMatchingAtOrAfter = 0
         for (timeRange in preferredTimeRanges) {
@@ -118,10 +127,8 @@ class TimeTableConstraintProvider : ConstraintProvider {
         val timeslot = eventPart.timeslot!!
 
 
-        val preferredTimeRanges = eventPart.event.preferredTimeRanges!!
-        var countMatchingAtOrBefore = 0
-        for (timeRange in preferredTimeRanges) {
-            if (timeRange.endTime == null) continue
+        // Calculate the actual end LocalDateTime of this event part (which is the last part)
+        // val eventPartActualEndDateTime = LocalDateTime.of(timeslot.date!!, timeslot.endTime!!) // Not directly needed for comparison logic below
 
             if (timeRange.dayOfWeek == null || timeRange.dayOfWeek == timeslot.dayOfWeek) {
                 if (timeslot.endTime <= timeRange.endTime) { // Removed !!
@@ -408,11 +415,11 @@ class TimeTableConstraintProvider : ConstraintProvider {
     }
 
     fun hardDeadlineConflictHardPenalize(constraintFactory: ConstraintFactory): Constraint {
-
         return constraintFactory
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart ->
-                eventPart.hardDeadline != null && eventPart.timeslot != null
+                eventPart.hardDeadline != null && eventPart.timeslot != null &&
+                eventPart.timeslot?.endTime != null && eventPart.timeslot?.date != null // Assuming timeslot.date exists
             }
             .filter { eventPart: EventPart ->
 
@@ -557,11 +564,11 @@ class TimeTableConstraintProvider : ConstraintProvider {
     }
 
     fun softDeadlineConflictSoftPenalize(constraintFactory: ConstraintFactory): Constraint {
-
         return constraintFactory
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart ->
-                eventPart.softDeadline != null && eventPart.timeslot != null
+                eventPart.softDeadline != null && eventPart.timeslot != null &&
+                eventPart.timeslot?.endTime != null && eventPart.timeslot?.date != null // Assuming timeslot.date exists
             }
             .filter { eventPart: EventPart ->
 
@@ -595,7 +602,6 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 eventPart.positiveImpactScore > 0
             }
             .filter { eventPart: EventPart -> eventPart.part == 1 }
-            .filter { eventPart: EventPart -> eventPart.timeslot?.startTime != null && eventPart.timeslot?.endTime != null }
             .filter { eventPart: EventPart ->
                 val totalParts = eventPart.lastPart
                 val timeslot = eventPart.timeslot!!
@@ -614,9 +620,11 @@ class TimeTableConstraintProvider : ConstraintProvider {
 
                 val possibleEndTime = timeslot.startTime.plus(totalDuration) // Removed !!
 
-                ((eventPart.positiveImpactDayOfWeek!! < timeslot.dayOfWeek) || (eventPart.positiveImpactDayOfWeek!! > timeslot.dayOfWeek)) ||
-                        ((eventPart.positiveImpactTime!! < timeslot.startTime) || (eventPart.positiveImpactTime!! > timeslot.startTime)) ||
-                        (possibleEndTime > workTime.endTime)
+
+
+                // Penalize if not on the positive impact day OR not at the positive impact time
+                (eventPart.positiveImpactDayOfWeek!! != timeslot.dayOfWeek) ||
+                (eventPart.positiveImpactTime!! != timeslot.startTime!!)
             }
             .penalize("positive impact time score based slot preference not provided medium penalize", HardMediumSoftScore.ONE_MEDIUM)
     }
@@ -649,7 +657,6 @@ class TimeTableConstraintProvider : ConstraintProvider {
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart -> eventPart.preferredTime != null }
             .filter { eventPart: EventPart -> eventPart.part == 1 }
-            .filter { eventPart: EventPart -> eventPart.timeslot?.startTime != null && eventPart.timeslot?.endTime != null }
             .filter { eventPart: EventPart ->
                 val totalParts = eventPart.lastPart
                 val timeslot = eventPart.timeslot!!
@@ -657,6 +664,15 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 val totalMinutes = totalParts * partDuration.toMinutes()
                 val totalDuration = Duration.ofMinutes(totalMinutes)
                 val workTime = eventPart.user.workTimes.find { wt -> wt.dayOfWeek == timeslot.dayOfWeek }
+                // If workTime or endTime is null, or preferredTime is null (already filtered by previous .filter { eventPart: EventPart -> eventPart.preferredTime != null }),
+                // it's hard to apply this rule.
+                if (workTime?.endTime == null) {
+                    return@filter false // Cannot determine if it's within working hours, so don't apply this penalty.
+                                        // Other constraints might penalize for being outside work hours.
+                }
+                val workEndDateTime = LocalDateTime.of(timeslot.date!!, workTime.endTime!!)
+
+                val isWithinWorkTime = eventOverallEndDateTime <= workEndDateTime
 
                 if (workTime == null || workTime.endTime == null || eventPart.preferredTime == null) {
 
@@ -832,7 +848,6 @@ class TimeTableConstraintProvider : ConstraintProvider {
                             0
                         }
                     } catch (e: Exception) {
-
                         0
                     }
                 }

@@ -17,11 +17,12 @@ import org.acme.kotlin.atomic.meeting.assist.persistence.PreferredTimeRangeRepos
 
 import org.eclipse.microprofile.config.inject.ConfigProperty
 import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.MonthDay // Added import for MonthDay
+import java.time.MonthDay
+import java.time.format.DateTimeFormatter
 import java.util.UUID // For generating IDs and hostId
-import java.time.OffsetDateTime // For EventPart startDate/endDate
-import java.time.ZoneOffset // For EventPart startDate/endDate
 
 
 import javax.enterprise.context.ApplicationScoped
@@ -89,11 +90,11 @@ class DemoDataGenerator {
 
     private fun generateTimeslots() {
         val timeslotList: MutableList<Timeslot> = mutableListOf()
-        val days = if (demoData == DemoData.LARGE) {
-            listOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
-        } else {
-            listOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY)
-        }
+        val year = LocalDate.now().year // Use current year or a fixed year like 2024
+        var currentDate = LocalDate.of(year, LocalDate.now().month, LocalDate.now().dayOfMonth) // Start from today
+
+        // Determine how many days to generate timeslots for
+        val numberOfDaysToGenerate = if (demoData == DemoData.LARGE) 14 else 7 // e.g., 2 weeks for LARGE, 1 week for SMALL
 
         val startTimes = listOf(
             LocalTime.of(8, 30), LocalTime.of(9, 0), LocalTime.of(9, 30), LocalTime.of(10, 0),
@@ -110,14 +111,24 @@ class DemoDataGenerator {
             LocalTime.of(16, 30), LocalTime.of(17, 0)
         )
 
-        for (day in days) {
+        for (d in 0 until numberOfDaysToGenerate) {
+            val actualDate = currentDate.plusDays(d.toLong())
+            // Optionally, skip weekends or non-working days
+            if (actualDate.dayOfWeek == DayOfWeek.SATURDAY || actualDate.dayOfWeek == DayOfWeek.SUNDAY) {
+                // continue // Uncomment to skip weekends
+            }
+
+            val derivedDayOfWeek = actualDate.dayOfWeek
+            val derivedMonthDay = MonthDay.from(actualDate)
+
             for (i in startTimes.indices) {
                 timeslotList.add(Timeslot(
-                    day, // Positional argument for dayOfWeek
-                    startTimes[i], // Positional argument for startTime
-                    endTimes[i], // Positional argument for endTime
-                    MonthDay.now(), // Positional argument for monthDay
-                    DEMO_HOST_ID // Positional argument for hostId
+                    hostId = DEMO_HOST_ID,
+                    dayOfWeek = derivedDayOfWeek,
+                    startTime = startTimes[i],
+                    endTime = endTimes[i],
+                    monthDay = derivedMonthDay,
+                    date = actualDate
                 ))
             }
         }
@@ -183,7 +194,8 @@ class DemoDataGenerator {
         val events = mutableListOf<Event>()
         val eventParts = mutableListOf<EventPart>()
         val preferredRanges = mutableListOf<PreferredTimeRange>()
-        val now = OffsetDateTime.now(ZoneOffset.UTC)
+        val now = LocalDateTime.now()
+        val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
 
         // Event 1 for User 1 (multi-part meeting)
         val user1 = users.firstOrNull { it.hostId == DEMO_HOST_ID && it.name == "User One" }
@@ -274,6 +286,10 @@ class DemoDataGenerator {
                 meetingId = null,
                 meetingPart = 2,
                 meetingLastPart = 2
+                id = UUID.randomUUID(), groupId = event1Id, eventId = event1Id, part = 1, lastPart = 2,
+                startDate = now.plusDays(1).withHour(10).withMinute(0).withSecond(0).format(formatter),
+                endDate = now.plusDays(1).withHour(10).withMinute(30).withSecond(0).format(formatter),
+                userId = user1.id!!, hostId = DEMO_HOST_ID, event = event1, priority = 1, modifiable = true, isMeeting = true
             ))
             preferredRanges.add(PreferredTimeRange(
                 eventId = event1IdString, userId = user1.id, hostId = DEMO_HOST_ID, // Removed !!
@@ -420,6 +436,7 @@ class DemoDataGenerator {
                     isMeeting = true, isExternalMeeting = false, isExternalMeetingModifiable = true, isMeetingModifiable = true,
                     dailyTaskList = false, weeklyTaskList = false, gap = false, preferredStartTimeRange = null, preferredEndTimeRange = null, totalWorkingHours = 8,
                     event = event5, hostId = DEMO_HOST_ID, meetingId = null, meetingPart = 1, meetingLastPart = 1
+
                  ))
                  preferredRanges.add(PreferredTimeRange(
                     eventId = event5IdString, userId = user3.id, hostId = DEMO_HOST_ID, // Removed !!
