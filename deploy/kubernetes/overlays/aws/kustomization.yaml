@@ -1,11 +1,12 @@
 # deploy/kubernetes/overlays/aws/kustomization.yaml
 # This Kustomization file defines the AWS-specific overlay for the Kubernetes deployment.
-# It builds upon the 'base' configuration and applies AWS-specific resources and patches.
+# It builds upon the 'base' configuration and applies AWS-specific resources, patches, and image overrides.
 
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 # 1. Include the base configuration
+# This brings in all the common Kubernetes manifests defined in the base layer.
 bases:
   - ../../base # Points to deploy/kubernetes/base
 
@@ -14,40 +15,51 @@ bases:
 resources:
   - resources/secret-provider-classes.yaml
 
-# 3. List patches to apply to the base resources for AWS environment.
-#    Using patchesStrategicMerge for broad compatibility.
-#    For Kustomize v4+, `patches:` can also be used for plain YAML patches.
+# 3. List patches to apply to the base resources for the AWS environment.
+#    These patches customize base resources for AWS-specific needs.
 patchesStrategicMerge:
   # Patch to update secret references in Deployments/StatefulSets to use
-  # Kubernetes Secrets created by SecretProviderClasses.
+  # Kubernetes Secrets created by SecretProviderClasses (sourcing from AWS Secrets Manager).
   - patches/update-secret-references.yaml
 
-  # Patch to add AWS Load Balancer Controller annotations to the Traefik service.
+  # Patch to add AWS Load Balancer Controller annotations to the Traefik service
+  # for provisioning an AWS Network Load Balancer (NLB).
   - patches/traefik-service-aws-annotations.yaml
 
   # --- Optional: Placeholder for IAM Roles for Service Accounts (IRSA) ---
   # If you are using IRSA, you might have patches to annotate ServiceAccounts
   # with the ARN of the IAM role they should assume.
-  # For example:
+  # Example:
   # - patches/serviceaccount-iam-annotations.yaml
-  #
-  # This file (e.g., serviceaccount-iam-annotations.yaml) would contain patches like:
-  #   apiVersion: v1
-  #   kind: ServiceAccount
-  #   metadata:
-  #     name: <service-account-name>
-  #     namespace: <namespace>
-  #     annotations:
-  #       eks.amazonaws.com/role-arn: "arn:aws:iam::YOUR_ACCOUNT_ID:role/YOUR_IRSA_ROLE_NAME"
 
-# Images: Overlays can also be used to update image tags or registries.
-# Example:
-# images:
-#   - name: placeholder-image-name # As defined in the base deployment
-#     newName: your-aws-ecr-repo-uri # New image URI for AWS ECR
-#     newTag: specific-tag-for-aws # New image tag for AWS
+# 4. Image Overrides for AWS ECR
+# This section overrides placeholder image names used in the base manifests
+# with actual ECR repository URIs for the AWS environment.
+# Replace YOUR_AWS_ACCOUNT_ID, YOUR_AWS_REGION, and YOUR_PROJECT_NAME_FROM_TF (e.g., 'atomic' if that's var.project_name in TF)
+# with your actual values. The image tag (e.g., 'latest' or a specific version) should also be set as appropriate.
+images:
+  - name: placeholder-atomic-scheduler # Base name for Optaplanner image
+    newName: YOUR_AWS_ACCOUNT_ID.dkr.ecr.YOUR_AWS_REGION.amazonaws.com/YOUR_PROJECT_NAME_FROM_TF-atomic-scheduler
+    newTag: latest # Or a specific Git SHA, version tag, etc.
+
+  - name: placeholder-atomic-functions # Base name for Functions service image
+    newName: YOUR_AWS_ACCOUNT_ID.dkr.ecr.YOUR_AWS_REGION.amazonaws.com/YOUR_PROJECT_NAME_FROM_TF-atomic-functions
+    newTag: latest
+
+  - name: placeholder-atomic-handshake # Base name for Handshake service image
+    newName: YOUR_AWS_ACCOUNT_ID.dkr.ecr.YOUR_AWS_REGION.amazonaws.com/YOUR_PROJECT_NAME_FROM_TF-atomic-handshake
+    newTag: latest
+
+  - name: placeholder-atomic-oauth # Base name for OAuth service image
+    newName: YOUR_AWS_ACCOUNT_ID.dkr.ecr.YOUR_AWS_REGION.amazonaws.com/YOUR_PROJECT_NAME_FROM_TF-atomic-oauth
+    newTag: latest
+
+  - name: placeholder-atomic-app # Base name for App (frontend) service image
+    newName: YOUR_AWS_ACCOUNT_ID.dkr.ecr.YOUR_AWS_REGION.amazonaws.com/YOUR_PROJECT_NAME_FROM_TF-atomic-app
+    newTag: latest
 
 # Common Labels or Annotations for this overlay (optional)
+# These would apply to all resources defined or included by this kustomization if uncommented.
 # commonLabels:
 #   cloud-provider: aws
 #   overlay: aws-specific

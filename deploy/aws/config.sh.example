@@ -1,0 +1,69 @@
+#!/bin/bash
+
+# -----------------------------------------------------------------------------
+# AWS Configuration Variables for Atomic Stack Deployment
+# -----------------------------------------------------------------------------
+# This file is sourced by other scripts to set environment variables for AWS deployment.
+# Please review and update these values to match your AWS environment and preferences.
+
+# --- AWS Profile and Region ---
+# If you use a specific AWS CLI named profile, set it here. Otherwise, leave empty or comment out.
+# export AWS_PROFILE="your-aws-profile"
+export AWS_DEFAULT_REGION="us-east-1" # Replace with your desired AWS region, e.g., us-west-2
+
+# --- Project and Environment Naming ---
+# Used for naming and tagging resources consistently.
+export PROJECT_NAME="atomic"         # A short name for your project (e.g., myapp, atomic)
+export ENVIRONMENT_NAME="dev"        # Deployment environment (e.g., dev, staging, prod)
+
+# --- Domain Name Configuration ---
+# The primary domain name under which your application will be accessible.
+# This is used for configuring Ingress, DNS, and potentially TLS certificates.
+export DOMAIN_NAME="example.com"     # Replace with your actual domain name
+
+# --- EKS Cluster Configuration ---
+export EKS_CLUSTER_NAME="${PROJECT_NAME}-eks-${ENVIRONMENT_NAME}" # Name for your EKS cluster
+export EKS_CLUSTER_VERSION="1.28"    # Desired Kubernetes version for EKS
+
+# --- Database Configuration ---
+# Used for the initial database creation if deploying RDS.
+export RDS_DB_NAME="atomicdb"
+export RDS_USERNAME="atomicadmin"
+# Note: The RDS master password will be managed via AWS Secrets Manager.
+# The Terraform script will create a placeholder secret named "${PROJECT_NAME}/POSTGRES_PASSWORD".
+# You will need to populate this secret in AWS Secrets Manager after its creation.
+
+# --- S3 Bucket for CodeBuild Artifacts ---
+# This bucket must be globally unique and should be created before running CodeBuild,
+# or ensure your Terraform setup creates it.
+export CODEBUILD_ARTIFACTS_S3_BUCKET="${PROJECT_NAME}-codebuild-artifacts-${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}" # Example: relies on AWS_ACCOUNT_ID being available or fetched
+
+# --- ECR Image Names (Suffixes) ---
+# These are the base names for your custom application images.
+# The ECR Terraform module will prefix these with ${PROJECT_NAME}-.
+# Example: for "atomic-functions", the ECR repo will be "atomic-atomic-functions".
+# These should match the 'name' field in the 'images' section of your Kustomize overlay.
+export IMAGE_NAME_SCHEDULER="atomic-scheduler"
+export IMAGE_NAME_FUNCTIONS="atomic-functions"
+export IMAGE_NAME_HANDSHAKE="atomic-handshake"
+export IMAGE_NAME_OAUTH="atomic-oauth"
+export IMAGE_NAME_APP="atomic-app"
+
+# --- Optional: ACM Certificate ARN for ALB/NLB ---
+# If you have an existing ACM certificate you want to use for the load balancer (ALB/NLB for Traefik).
+# If commented out or empty, other mechanisms (like Traefik's Let's Encrypt) might be used.
+# export ACM_CERTIFICATE_ARN="arn:aws:acm:your-region:your-account-id:certificate/your-certificate-id"
+
+# --- Terraform Backend Configuration (Informational - configure in versions.tf) ---
+# These are for your reference when setting up the S3 backend in versions.tf.
+# export TERRAFORM_S3_BUCKET="your-project-terraform-state-${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}" # Must be globally unique
+# export TERRAFORM_S3_KEY_PREFIX="aws/${PROJECT_NAME}/${ENVIRONMENT_NAME}" # Path within the bucket
+# export TERRAFORM_DYNAMODB_TABLE="your-project-terraform-lock" # For state locking
+
+echo "AWS Configuration loaded from config.sh:"
+echo "  AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}"
+echo "  PROJECT_NAME: ${PROJECT_NAME}"
+echo "  ENVIRONMENT_NAME: ${ENVIRONMENT_NAME}"
+echo "  DOMAIN_NAME: ${DOMAIN_NAME}"
+echo "  EKS_CLUSTER_NAME: ${EKS_CLUSTER_NAME}"
+# Add other important variables here if you want them echoed when sourced.
