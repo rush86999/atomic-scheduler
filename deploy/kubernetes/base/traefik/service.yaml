@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+  namespace: traefik-ingress
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: traefik
+spec:
+  type: LoadBalancer # Exposes Traefik externally using a cloud provider's load balancer
+  selector:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: traefik
+  ports:
+    - name: web
+      protocol: TCP
+      port: 80 # External port
+      targetPort: web # Target port name on the pods (containerPort 80)
+    - name: websecure
+      protocol: TCP
+      port: 443 # External port
+      targetPort: websecure # Target port name on the pods (containerPort 443)
+    # --- Optional: Exposing the Admin/Dashboard via LoadBalancer ---
+    # It's generally NOT recommended to expose the Traefik dashboard (port 8080) publicly
+    # without proper authentication and authorization.
+    # For internal access, consider using `kubectl port-forward` or an internal IngressRoute.
+    # If you must expose it, ensure it's secured (e.g., via Traefik Middleware for basic auth/OAuth).
+    # - name: admin
+    #   protocol: TCP
+    #   port: 8080 # External port for dashboard
+    #   targetPort: admin # Target port name on the pods (containerPort 8080)
+
+  # externalTrafficPolicy: Local # Set to "Local" to preserve client source IP. Default is "Cluster".
+  # Requires nodes to be directly routable or specific cloud provider LB configuration.
+  # If set to "Local", health checks from the LB will target individual pods on their nodes.
+  # If "Cluster", health checks target a node port on all nodes.
+  # For preserving client IP with Traefik, "Local" is often preferred.
+  # Consider the implications for your specific environment and LB provider.
+  # For a base config, keeping it as default ("Cluster") is safer for broader compatibility initially.

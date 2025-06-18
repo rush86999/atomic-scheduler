@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traefik
+  namespace: traefik-ingress
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: traefik
+spec:
+  replicas: 2 # For high availability
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+      app.kubernetes.io/instance: traefik
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: traefik
+        app.kubernetes.io/instance: traefik
+    spec:
+      serviceAccountName: traefik-ingress-controller
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        # fsGroup: 65532 # If using a non-root user and need to write to volumes
+        # runAsNonRoot: true
+        # runAsUser: 65532 # Example non-root user ID
+        # runAsGroup: 65532
+        # For base, let's keep it simpler, but these are considerations for hardening.
+        # The official Traefik Helm chart often runs as root but drops capabilities.
+        # The prompt requested specific security context settings.
+        # capabilities:
+        #   drop:
+        #   - ALL
+        # readOnlyRootFilesystem: true
+        # This needs to be on the container level, not pod level for these specific fields.
+        pass: # No pod-level security context for these specific fields.
+      containers:
+        - name: traefik
+          image: traefik:v2.10.4 # Specific version from compose
+          imagePullPolicy: IfNotPresent
+          args:
+            # --- Entrypoints ---
+            - "--entrypoints.web.address=:80"
+            - "--entrypoints.websecure.address=:443"
+            # - "--entrypoints.web.http.redirections.entryPoint.to=websecure" # Optional: Redirect HTTP to HTTPS
+            # - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+
+            # --- API and Dashboard ---
+            - "--api.insecure=true" # Exposes the Traefik dashboard on port 8080 (admin entrypoint). Not recommended for production without auth.
+            - "--api.dashboard=true"
+            # - "--api.debug=true" # Enable for more verbose API logs if needed
+
+            # --- Access Logs ---
+            - "--accesslog=true"
+            # - "--accesslog.format=json" # Or common
+            # - "--accesslog.filepath=/var/log/traefik/access.log" # If logging to a file/volume
+
+            # --- Providers ---
+            - "--providers.kubernetescrd" # Enable Kubernetes CRD provider (for IngressRoute, Middleware, etc.)
+            - "--providers.kubernetesingress" # Enable Kubernetes Ingress provider (for standard Ingress resources)
+            # - "--providers.kubernetesgateway" # Enable for Kubernetes Gateway API support
+
+            # --- Ping Endpoint (for health checks) ---
+            - "--ping=true"
+            - "--ping.entryPoint=traefik" # Expose ping on the 'traefik' (admin) entrypoint (port 8080)
+
+            # --- Optional: Let's Encrypt (ACME) ---
+            # - "--certificatesresolvers.myresolver.acme.email=your-email@example.com"
+            # - "--certificatesresolvers.myresolver.acme.storage=/data/acme.json" # Requires a persistent volume
+            # - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+            # - "--entrypoints.websecure.http.tls.certresolver=myresolver"
+            # - "--entrypoints.websecure.http.tls.domains[0].main=yourdomain.com"
+            # - "--entrypoints.websecure.http.tls.domains[0].sans=*.yourdomain.com"
+
+            # --- Logging ---
+            - "--log.level=INFO" # (DEBUG, INFO, WARN, ERROR, FATAL, PANIC)
+            # - "--log.format=json"
+            # - "--log.filepath=/var/log/traefik/traefik.log" # If logging to a file/volume
+
+            # --- Global Settings ---
+            # - "--global.checknewversion=false"
+            # - "--global.sendanonymoususage=false"
+          ports:
+            - name: web # HTTP entrypoint
+              containerPort: 80
+              protocol: TCP
+            - name: websecure # HTTPS entrypoint
+              containerPort: 443
+              protocol: TCP
+            - name: admin # Traefik dashboard / API / ping
+              containerPort: 8080 # Default admin port for Traefik
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL # Drop all capabilities for security
+            readOnlyRootFilesystem: true
+            # runAsNonRoot: true
+            # runAsUser: 65532 # Example non-root user
+            # runAsGroup: 65532
+          livenessProbe:
+            httpGet:
+              path: /ping # Traefik's built-in health check endpoint
+              port: admin # Port 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: admin
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 1 # Be quicker to mark as ready
+          # --- Optional: Volume for Let's Encrypt certificates ---
+          # volumeMounts:
+          #   - name: acme-storage
+          #     mountPath: /data # Corresponds to acme.storage path
+      # volumes:
+      #   - name: acme-storage
+      #     persistentVolumeClaim:
+      #       claimName: traefik-acme-pvc # PVC should be created separately if using this.

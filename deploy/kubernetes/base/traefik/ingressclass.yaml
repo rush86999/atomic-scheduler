@@ -1,0 +1,18 @@
+# IngressClass resource to define this Traefik instance as an option for Ingress objects.
+# This is standard for Kubernetes v1.18+
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: traefik # The name of this IngressClass
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: traefik
+  # annotations:
+  #   ingressclass.kubernetes.io/is-default-class: "true" # Uncomment to make this the default IngressClass
+spec:
+  controller: traefik.io/ingress-controller # Identifies the controller that should implement Ingresses of this class.
+                                          # This value should match what Traefik expects.
+                                          # For Traefik, it's typically "traefik.io/ingress-controller".
+# Note: If using Traefik with CRDs (IngressRoute, etc.), IngressClass is still useful for associating
+# a controller, but IngressRoute objects themselves don't use the `ingressClassName` field directly.
+# However, standard Kubernetes Ingress objects will use `ingressClassName: traefik` to select this controller.
