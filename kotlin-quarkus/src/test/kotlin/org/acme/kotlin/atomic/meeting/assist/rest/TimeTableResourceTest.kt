@@ -17,6 +17,17 @@ import java.time.ZoneOffset
 import java.util.UUID
 import javax.inject.Inject
 import org.hamcrest.Matchers // For more advanced RestAssured assertions if needed
+import io.quarkus.test.junit.TestProfile
+import io.quarkus.test.junit.mockito.InjectMock
+import org.acme.kotlin.atomic.meeting.assist.persistence.*
+import org.http4k.core.*
+import org.http4k.client.OkHttp
+import org.junit.jupiter.api.BeforeEach
+import org.mockito.Mockito.*
+import org.mockito.ArgumentCaptor
+import org.mockito.Captor
+import org.mockito.Mock
+import org.mockito.MockitoAnnotations
 
 // NOTE: @TestTransaction is not available in Quarkus 1.x.
 // For Quarkus 2.x+, it can be used on test methods to roll back transactions.
@@ -25,10 +36,58 @@ import org.hamcrest.Matchers // For more advanced RestAssured assertions if need
 // and not relying on H2's default behavior or schema-generation drop-and-create.
 
 @QuarkusTest
+@TestProfile(TestCallbackTokenProfile::class)
 class TimeTableResourceTest {
 
     @Inject
     lateinit var objectMapper: ObjectMapper
+
+    @Inject
+    lateinit var timeTableResource: TimeTableResource // Instance under test
+
+    // InjectMocks for dependencies of callAPI. We don't care about their actual behavior for this test.
+    @InjectMock
+    lateinit var timeslotRepository: TimeslotRepository
+    @InjectMock
+    lateinit var userRepository: UserRepository
+    @InjectMock
+    lateinit var eventPartRepository: EventPartRepository
+    @InjectMock
+    lateinit var eventRepository: EventRepository
+    // workTimeRepository and preferredTimeRangeRepository are used in deleteTableGivenUser,
+    // which is called by callAPI.
+    @InjectMock
+    lateinit var workTimeRepository: WorkTimeRepository
+    @InjectMock
+    lateinit var preferredTimeRangeRepository: PreferredTimeRangeRepository
+
+
+    // This is the tricky part - callAPI creates its own OkHttp client.
+    // We ideally want to capture the request sent by the HttpHandler.
+    // One way could be to mock the OkHttp constructor or the HttpHandler itself.
+    // For now, let's prepare an ArgumentCaptor.
+    @Captor
+    private lateinit var requestCaptor: ArgumentCaptor<Request>
+
+    // Mock HttpHandler that will be "produced" by the mocked OkHttp chain
+    @Mock
+    private lateinit var mockHttpHandler: HttpHandler
+
+    @BeforeEach
+    fun setUp() {
+        MockitoAnnotations.openMocks(this)
+        // Basic stubbing for repository calls within callAPI
+        `when`(timeslotRepository.list(anyString(), any(io.quarkus.panache.common.Sort::class.java), any(UUID::class.java))).thenReturn(emptyList())
+        `when`(userRepository.list(anyString(), any(UUID::class.java))).thenReturn(emptyList())
+        `when`(eventPartRepository.list(anyString(), any(io.quarkus.panache.common.Sort::class.java), any(UUID::class.java))).thenReturn(emptyList())
+        `when`(eventRepository.list(anyString(), anyList())).thenReturn(emptyList())
+        `when`(workTimeRepository.delete(anyString(), any(UUID::class.java))).thenReturn(0L) // Or any relevant return
+        `when`(preferredTimeRangeRepository.delete(anyString(), any(UUID::class.java))).thenReturn(0L)
+
+
+        // Stub the mockHttpHandler to capture requests and return a basic response
+        `when`(mockHttpHandler.invoke(requestCaptor.capture())).thenReturn(Response(Status.OK))
+    }
 
     // Use a unique hostId for each test run to avoid conflicts if tests run in parallel or if DB is not wiped.
     // Alternatively, use @BeforeEach/@AfterEach to clean up data for a fixed testHostId.
@@ -65,6 +124,58 @@ class TimeTableResourceTest {
             singletonId = singletonId, hostId = hostId, timeslots = timeslots, userList = users, eventParts = eventParts,
             fileKey = "testFileKey-${hostId}", delay = 50, callBackUrl = "http://localhost:8081/test-callback"
         )
+    }
+
+    @Test
+    fun `test callAPI sends X-Callback-Token header`() {
+        // Arrange
+        val testUrl = "http://mock-callback.com/test"
+        val testFileKey = "testFileKeyForTokenTest"
+        val testHostId = UUID.randomUUID()
+        val expectedToken = "test-secret-token" // From TestCallbackTokenProfile
+
+        // Verify that the config property was injected correctly into the resource
+        assert(timeTableResource.callbackSecretToken == expectedToken) {
+            "CALLBACK_SECRET_TOKEN was not injected correctly. Expected: $expectedToken, Got: ${timeTableResource.callbackSecretToken}"
+        }
+
+        // Use mockito-inline's mockConstruction to intercept OkHttp instantiation
+        // This requires mockito-inline to be on the classpath and correctly configured.
+        val mockConstruction = mockConstruction(OkHttp::class.java) { mock, context ->
+            // When the mocked OkHttp client (which is an HttpHandler) is invoked,
+            // delegate to our globally mocked mockHttpHandler.
+            // This allows us to capture the request made by the actual clientHandler in TimeTableResource.
+            `when`(mock.invoke(any(Request::class.java))).thenAnswer {
+                mockHttpHandler.invoke(it.arguments[0] as Request)
+            }
+        }
+
+        try {
+            // Act
+            // Call the method under test. It will internally create an OkHttp client,
+            // which should be intercepted by our mockConstruction.
+            timeTableResource.callAPI(testUrl, testFileKey, testHostId)
+
+            // Assert
+            // Verify that the (mocked) HttpHandler was called (meaning the request pipeline was executed)
+            verify(mockHttpHandler).invoke(any(Request::class.java))
+
+            // Check the captured request for the header
+            val capturedRequest = requestCaptor.value
+            val actualToken = capturedRequest.header("X-Callback-Token")
+
+            assert(expectedToken == actualToken) {
+                "X-Callback-Token header assertion failed. Expected: $expectedToken, Got: $actualToken. Request URI: ${capturedRequest.uri}"
+            }
+            // Ensure the correct URL was called
+             assert(capturedRequest.uri.toString() == testUrl) {
+                "Request URI assertion failed. Expected: $testUrl, Got: ${capturedRequest.uri}"
+            }
+
+        } finally {
+            // It's important to close the mockConstruction context to avoid interference with other tests
+            mockConstruction.close()
+        }
     }
 
     @Test
