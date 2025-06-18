@@ -15,6 +15,7 @@ class Event {
     @Id
     lateinit var id: String
 
+    lateinit var name: String // Added name property
     lateinit var userId: UUID
 
     lateinit var hostId: UUID
@@ -28,8 +29,9 @@ class Event {
     // No-arg constructor required for Hibernate and Opta Planner
     constructor()
 
-    constructor(id: String, preferredTimeRanges: MutableList<PreferredTimeRange>?, userId: UUID, hostId: UUID) {
+    constructor(id: String, name: String, preferredTimeRanges: MutableList<PreferredTimeRange>?, userId: UUID, hostId: UUID) {
         this.id = id
+        this.name = name // Initialize name
         this.preferredTimeRanges = preferredTimeRanges
         this.userId = userId
         this.hostId = hostId
