@@ -6,15 +6,15 @@ metadata:
   labels:
     app: minio
 spec:
-  type: ClusterIP
+  type: ClusterIP # Internal service, not exposed externally by default via LoadBalancer
   selector:
-    app: minio
+    app: minio # Selects the MinIO pods
   ports:
     - name: api
       protocol: TCP
-      port: 8484
-      targetPort: api
+      port: 8484       # Port the service will listen on for API traffic
+      targetPort: api  # Matches the 'api' port name in the Deployment's podSpec (containerPort 8484)
     - name: console
       protocol: TCP
-      port: 9001
-      targetPort: console
+      port: 9001       # Port the service will listen on for Console UI traffic
+      targetPort: console # Matches the 'console' port name in the Deployment's podSpec (containerPort 9001)

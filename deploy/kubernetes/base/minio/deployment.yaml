@@ -17,16 +17,23 @@ spec:
     spec:
       containers:
         - name: minio
-          image: minio/minio:RELEASE.2021-09-24T00-24-24Z
+          image: minio/minio:RELEASE.2021-09-24T00-24-24Z # As specified from original compose
           command:
             - "sh"
             - "-c"
+            # The original compose command was: "mkdir -p /data/nhost && /opt/bin/minio server --console-address :9001 --address :8484 /data"
+            # Using /usr/bin/minio as a common path, adjust if this specific image version differs.
+            # The /data/nhost directory creation might be specific to an Nhost setup.
+            # For a generic MinIO setup, just starting the server with /data is typical.
+            # Let's include mkdir -p /data/nhost if it's a general requirement from the project context.
             - "mkdir -p /data/nhost && /usr/bin/minio server --console-address :9001 --address :8484 /data"
           ports:
-            - name: api
+            - name: api # MinIO S3 API
               containerPort: 8484
-            - name: console
+              protocol: TCP
+            - name: console # MinIO Console UI
               containerPort: 9001
+              protocol: TCP
           env:
             - name: MINIO_ROOT_USER
               valueFrom:
@@ -38,25 +45,27 @@ spec:
                 secretKeyRef:
                   name: minio-secret
                   key: MINIO_ROOT_PASSWORD
+            # MINIO_BROWSER_REDIRECT_URL: "http://localhost:9001/login" # Example if needed, usually for local setups
+            # MINIO_SERVER_URL: "http://localhost:8484" # Example if needed
           volumeMounts:
             - name: data
-              mountPath: /data
+              mountPath: /data # Path used in the server command
           readinessProbe:
             httpGet:
-              path: /minio/health/live
-              port: 8484
-            initialDelaySeconds: 5
-            periodSeconds: 10
-            timeoutSeconds: 1
+              path: /minio/health/ready # Corrected path from /live to /ready for readiness
+              port: api # Port 8484
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
             successThreshold: 1
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /minio/health/live
-              port: 8484
-            initialDelaySeconds: 15
+              path: /minio/health/live # /live is appropriate for liveness
+              port: api # Port 8484
+            initialDelaySeconds: 30
             periodSeconds: 20
-            timeoutSeconds: 1
+            timeoutSeconds: 5
             successThreshold: 1
             failureThreshold: 3
       volumes:

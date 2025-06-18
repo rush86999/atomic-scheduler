@@ -1,0 +1,74 @@
+# deploy/kubernetes/overlays/gcp/patches/traefik-service-gcp-annotations.yaml
+# This patch adds GCP Load Balancer specific annotations to the Traefik service.
+# It assumes the base Traefik service is named 'traefik' and is in the 'traefik-ingress' namespace,
+# and is of type LoadBalancer.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+  namespace: traefik-ingress # Common namespace for Traefik, adjust if different in your base
+  annotations:
+    # --- Google Cloud Load Balancer Configuration Annotations ---
+
+    # Explicitly set the load balancer scheme to EXTERNAL.
+    # For Service type=LoadBalancer, this is usually the default, but explicitness can be good.
+    cloud.google.com/load-balancer-scheme: "EXTERNAL"
+
+    # --- Optional: Specify a Static External IP Address ---
+    # To use a pre-allocated static external IP address, uncomment and set the IP address or name.
+    # Using a reserved IP address name (recommended):
+    # kubernetes.io/load-balancer-ip: "your-static-ip-name"
+    # Or, directly using an IP address (less flexible):
+    # kubernetes.io/load-balancer-ip: "YOUR_STATIC_IP_ADDRESS"
+    # The static IP must be created in the same region as the GKE cluster.
+
+    # --- Optional: Network Tier ---
+    # Specifies the network tier for the Load Balancer. Default is "PREMIUM".
+    # Other option is "STANDARD". Premium Tier uses Google's global network.
+    # cloud.google.com/network-tier: "PREMIUM"
+
+    # --- Health Check Notes for GKE Network Load Balancer (L4) ---
+    # For GKE services of type LoadBalancer, an L4 Network Load Balancer is created.
+    # Health checks for these LBs are typically GCE health checks.
+    # - If `externalTrafficPolicy: Cluster` (default), health checks target a `healthCheckNodePort` on each node.
+    #   The readiness of Traefik pods influences this.
+    # - If `externalTrafficPolicy: Local`, health checks target the Traefik pods directly on their respective nodes.
+    #   This preserves client source IP. Traefik's own readiness probe (e.g., /ping on an admin/entrypoint port)
+    #   is crucial here to correctly signal pod health to GKE.
+    #
+    # Direct annotation-based configuration of the GCE health check path/port for L4 services
+    # is less common than for L7 Ingress. The service controller usually derives settings.
+    # For example, if your Traefik service spec includes:
+    # spec:
+    #   externalTrafficPolicy: Local
+    #   ports:
+    #   - name: web
+    #     port: 80
+    #     targetPort: web
+    #   - name: websecure
+    #     port: 443
+    #     targetPort: websecure
+    # And your Traefik pods have a readinessProbe (e.g., on port 8000/ping), GKE will use this readiness
+    # to determine which pods receive traffic from the LB.
+    #
+    # If you need very specific health check behavior for the LB itself beyond pod readiness,
+    # often an L7 Ingress setup is preferred over a type=LoadBalancer service for Traefik in GCP.
+    # However, if Traefik's /ping endpoint is exposed on a service port (e.g., 80 or 443),
+    # and that port is part of the LB service, GKE's health check will hit that.
+    # For instance, if Traefik's port 80 (web entrypoint) also serves /ping:
+    # No specific health check annotation might be needed if Traefik's readiness probe is correctly configured.
+    #
+    # The annotation `networking.gke.io/health-check` or similar custom health check configurations
+    # are typically associated with BackendConfig for GKE Ingress (L7), not directly on L4 LB services.
+    # For this patch, we rely on GKE's default behavior for L4 LB health checks,
+    # which respects pod readiness probes.
+
+    # --- Optional: Load Balancer Subnet (for Internal Load Balancers) ---
+    # If using an internal load balancer, you might specify a subnet.
+    # Not applicable here as we are using "EXTERNAL".
+    # networking.gke.io/internal-load-balancer-subnet: "projects/YOUR_PROJECT_ID/regions/YOUR_REGION/subnetworks/YOUR_SUBNET_NAME"
+
+    # Note: Ensure your GKE cluster has the necessary scopes and permissions for creating/managing LoadBalancers.
+    # The specific annotations and their behaviors can change with GKE versions.
+    # Always refer to the official GKE documentation for LoadBalancer services.

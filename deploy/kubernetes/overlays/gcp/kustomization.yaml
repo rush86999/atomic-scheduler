@@ -1,0 +1,51 @@
+# deploy/kubernetes/overlays/gcp/kustomization.yaml
+# This Kustomization file defines the GCP-specific overlay for the Kubernetes deployment.
+# It builds upon the 'base' configuration and applies GCP-specific resources and patches.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 1. Include the base configuration
+bases:
+  - ../../base # Points to deploy/kubernetes/base
+
+# 2. List GCP-specific resources to be added or modified.
+#    SecretProviderClasses are specific to this GCP overlay for integrating with Google Secret Manager.
+resources:
+  - resources/secret-provider-classes-gcp.yaml
+
+# 3. List patches to apply to the base resources for the GCP environment.
+#    Using patchesStrategicMerge for broad compatibility.
+patchesStrategicMerge:
+  # Patch to update secret references in Deployments/StatefulSets to use
+  # Kubernetes Secrets created by SecretProviderClasses that source from Google Secret Manager.
+  - patches/update-secret-references-gcp.yaml
+
+  # Patch to annotate default ServiceAccounts in application namespaces for GKE Workload Identity,
+  # linking them to a GCP Service Account that has permissions to access secrets.
+  - patches/serviceaccount-workload-identity-annotations.yaml
+
+  # Patch to add GCP Load Balancer specific annotations to the Traefik service.
+  - patches/traefik-service-gcp-annotations.yaml
+
+  # --- Optional: Placeholder for other GCP-specific patches ---
+  # For example, patches to configure GCP-specific storage options for PersistentVolumeClaims
+  # (e.g., using specific StorageClass like 'premium-rwo' or 'standard-rwo'),
+  # or BackendConfig for GKE Ingress if using L7 Load Balancing.
+  # - patches/pvc-gcp-storage-config.yaml
+  # - patches/ingress-gcp-backendconfig.yaml
+
+# Images: Overlays can also be used to update image tags or registries for Google Artifact Registry (GAR) or GCR.
+# Example:
+# images:
+#   - name: placeholder-image-name # As defined in the base deployment
+#     newName: us-central1-docker.pkg.dev/YOUR_GCP_PROJECT_ID/your-repo/imagename # New image URI for GAR
+#     newTag: specific-tag-for-gcp # New image tag for GCP
+
+# Common Labels or Annotations for this overlay (optional)
+# commonLabels:
+#   cloud-provider: gcp
+#   overlay: gcp-specific
+#
+# commonAnnotations:
+#   note: "Configuration specific to GCP deployment environment"

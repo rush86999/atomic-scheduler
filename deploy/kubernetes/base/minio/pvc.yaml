@@ -8,5 +8,6 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi # Defaulting to 10Gi, can be adjusted
-  # storageClassName: "" # Optional: specify a storage class if needed
+      storage: 10Gi # As specified
+  # storageClassName: "" # Optional: specify a storage class if needed, e.g., "do-block-storage" for DigitalOcean.
+                       # For cloud provider defaults (like gp2 on AWS, standard on GKE/Azure), often not needed.

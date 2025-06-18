@@ -1,0 +1,63 @@
+# deploy/kubernetes/overlays/digitalocean/patches/traefik-service-do-annotations.yaml
+# This patch adds DigitalOcean Load Balancer specific annotations to the Traefik service.
+# It assumes the base Traefik service is named 'traefik' and is in the 'traefik-ingress' namespace.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+  namespace: traefik-ingress # Common namespace for Traefik, adjust if different in your base
+  annotations:
+    # --- DigitalOcean Load Balancer Configuration Annotations ---
+
+    # Specify the frontend protocol for the load balancer.
+    # For Traefik, "tcp" is often used to pass raw TCP traffic for both HTTP and HTTPS (web and websecure entrypoints),
+    # allowing Traefik to handle TLS termination and HTTP/S routing.
+    # If you want the DO LB to handle HTTP/HTTPS directly (e.g., for DO managed certs), you might use "http" or "https".
+    service.beta.kubernetes.io/digitalocean-load-balancer-protocol: "tcp"
+
+    # Specify the load balancing algorithm.
+    # Options are "round_robin" or "least_connections".
+    service.beta.kubernetes.io/digitalocean-load-balancer-algorithm: "round_robin"
+
+    # --- Health Check Configuration for the DigitalOcean Load Balancer ---
+    # Protocol for health checks on the Droplets (nodes).
+    service.beta.kubernetes.io/digitalocean-load-balancer-healthcheck-protocol: "tcp"
+
+    # Port for health checks. This should be a port Traefik listens on, e.g., the web entrypoint.
+    # A TCP check to port 80 verifies that Traefik's web entrypoint is listening.
+    service.beta.kubernetes.io/digitalocean-load-balancer-healthcheck-port: "80" # Assuming Traefik's 'web' entrypoint is on port 80
+
+    # If healthcheck-protocol were "http", you would also specify a path:
+    # service.beta.kubernetes.io/digitalocean-load-balancer-healthcheck-path: "/ping" # Traefik's ping endpoint
+
+    # --- PROXY Protocol ---
+    # Enable PROXY protocol to pass client connection information (like IP address) to Traefik.
+    # Traefik entrypoints need to be configured to accept PROXY protocol if this is enabled.
+    service.beta.kubernetes.io/digitalocean-load-balancer-enable-proxy-protocol: "true"
+
+    # --- Optional: DigitalOcean Managed SSL Certificate ---
+    # If you want to use a DigitalOcean-managed SSL certificate (e.g., Let's Encrypt handled by DO or a custom cert uploaded to DO).
+    # This would typically require `digitalocean-load-balancer-protocol` to be "https" or for specific forwarding rules.
+    #
+    # 1. Specify the ID of the SSL certificate managed in DigitalOcean:
+    # service.beta.kubernetes.io/digitalocean-load-balancer-certificate-id: "YOUR_DO_CERTIFICATE_ID"
+    #
+    # Note: If using this, you might also need to configure forwarding rules if your service listens on TCP but you want HTTPS termination at LB.
+    # This can get complex; often, letting Traefik handle SSL via Let's Encrypt internally is simpler.
+    # Example for forwarding HTTPS to Traefik's websecure entrypoint (assuming it's also on TCP):
+    # This might require more advanced annotations if the LB protocol is "tcp" but you want SSL termination.
+    # The `digitalocean-load-balancer-protocol: "https"` annotation is usually paired with `certificate-id`.
+
+    # --- Optional: Specify Load Balancer Size ---
+    # Example: "lb-small", "lb-medium", "lb-large" (check DO docs for current sizings)
+    # service.beta.kubernetes.io/digitalocean-load-balancer-size-slug: "lb-small"
+
+    # --- Optional: Sticky Sessions ---
+    # service.beta.kubernetes.io/digitalocean-load-balancer-sticky-sessions-type: "cookies"
+    # service.beta.kubernetes.io/digitalocean-load-balancer-sticky-sessions-cookie-name: "DOSTICKY"
+    # service.beta.kubernetes.io/digitalocean-load-balancer-sticky-sessions-cookie-ttl-seconds: "300"
+
+    # Note: Ensure the DigitalOcean cloud controller manager is running in your DOKS cluster
+    # and has the necessary permissions. The specific annotations and their behaviors
+    # can depend on the version of the CCM. Always refer to official DigitalOcean Kubernetes documentation.
