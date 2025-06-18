@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth-service
+  namespace: oauth
+  labels:
+    app: oauth
+spec:
+  type: ClusterIP
+  selector:
+    app: oauth # Selects the oauth pods
+  ports:
+    - name: http
+      protocol: TCP
+      port: 3000 # Port the service will listen on
+      targetPort: http # Name of the port in the Deployment's podSpec (containerPort 3000)

@@ -1,0 +1,56 @@
+# deploy/kubernetes/overlays/aws/kustomization.yaml
+# This Kustomization file defines the AWS-specific overlay for the Kubernetes deployment.
+# It builds upon the 'base' configuration and applies AWS-specific resources and patches.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 1. Include the base configuration
+bases:
+  - ../../base # Points to deploy/kubernetes/base
+
+# 2. List AWS-specific resources to be added or modified.
+#    SecretProviderClasses are specific to this AWS overlay for integrating with AWS Secrets Manager.
+resources:
+  - resources/secret-provider-classes.yaml
+
+# 3. List patches to apply to the base resources for AWS environment.
+#    Using patchesStrategicMerge for broad compatibility.
+#    For Kustomize v4+, `patches:` can also be used for plain YAML patches.
+patchesStrategicMerge:
+  # Patch to update secret references in Deployments/StatefulSets to use
+  # Kubernetes Secrets created by SecretProviderClasses.
+  - patches/update-secret-references.yaml
+
+  # Patch to add AWS Load Balancer Controller annotations to the Traefik service.
+  - patches/traefik-service-aws-annotations.yaml
+
+  # --- Optional: Placeholder for IAM Roles for Service Accounts (IRSA) ---
+  # If you are using IRSA, you might have patches to annotate ServiceAccounts
+  # with the ARN of the IAM role they should assume.
+  # For example:
+  # - patches/serviceaccount-iam-annotations.yaml
+  #
+  # This file (e.g., serviceaccount-iam-annotations.yaml) would contain patches like:
+  #   apiVersion: v1
+  #   kind: ServiceAccount
+  #   metadata:
+  #     name: <service-account-name>
+  #     namespace: <namespace>
+  #     annotations:
+  #       eks.amazonaws.com/role-arn: "arn:aws:iam::YOUR_ACCOUNT_ID:role/YOUR_IRSA_ROLE_NAME"
+
+# Images: Overlays can also be used to update image tags or registries.
+# Example:
+# images:
+#   - name: placeholder-image-name # As defined in the base deployment
+#     newName: your-aws-ecr-repo-uri # New image URI for AWS ECR
+#     newTag: specific-tag-for-aws # New image tag for AWS
+
+# Common Labels or Annotations for this overlay (optional)
+# commonLabels:
+#   cloud-provider: aws
+#   overlay: aws-specific
+#
+# commonAnnotations:
+#   note: "Configuration specific to AWS deployment environment"

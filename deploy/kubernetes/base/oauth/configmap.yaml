@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth-configmap
+  namespace: oauth
+data:
+  # General Application URLs
+  # NEXT_PUBLIC_APP_URL: This is the main frontend application URL that users access.
+  # It's where users might be redirected back to after successful OAuth flows.
+  NEXT_PUBLIC_APP_URL: "https://${HOST_NAME}" # Placeholder, replace ${HOST_NAME} with actual external domain
+
+  # Handshake Service URL (internal Kubernetes service)
+  HANDSHAKE_URL: "http://handshake-service.handshake.svc.cluster.local:3000"
+
+  # Google OAuth Configuration
+  # GOOGLE_REDIRECT_URL: The callback URL registered with Google for this OAuth service.
+  # It must point to an endpoint on this 'oauth' service itself, externally accessible.
+  GOOGLE_REDIRECT_URL: "https://${HOST_NAME}/v1/oauth/api/google-calendar-handshake/oauth2callback" # Path needs to match actual API route
+
+  # Zoom OAuth Configuration
+  # NEXT_PUBLIC_ZOOM_CLIENT_ID: This is often the same as ZOOM_CLIENT_ID from secrets.
+  # If it's explicitly public and different, define it here. Otherwise, it can be sourced from secrets.
+  # For now, let's assume it's needed publicly and might be same or different.
+  # If it's always same as secret ZOOM_CLIENT_ID, app can just use that.
+  # If it's for frontend use and ZOOM_CLIENT_ID in secret is for backend, it could be different.
+  # Let's provide a placeholder here.
+  NEXT_PUBLIC_ZOOM_CLIENT_ID: "YOUR_PUBLIC_ZOOM_CLIENT_ID_IF_DIFFERENT" # Or reference from secret if same and app handles it
+
+  # NEXT_PUBLIC_ZOOM_REDIRECT_URL: The callback URL registered with Zoom for this OAuth service.
+  # It must point to an endpoint on this 'oauth' service itself, externally accessible.
+  NEXT_PUBLIC_ZOOM_REDIRECT_URL: "https://${HOST_NAME}/v1/oauth/zoom/mobile-callback" # Path needs to match actual API route
+
+  # Default port for this Next.js OAuth service
+  PORT: "3000"
+
+  # Node environment
+  NODE_ENV: "production"
+
+  # Logging level
+  LOG_LEVEL: "info"
+
+  # Hasura URL (if the oauth service needs to query Hasura for non-admin tasks)
+  HASURA_GRAPHQL_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080/v1/graphql"
