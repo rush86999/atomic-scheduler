@@ -19,6 +19,7 @@ import org.http4k.format.Jackson.json
 import org.optaplanner.core.api.score.ScoreManager
 import org.optaplanner.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore
 import org.optaplanner.core.api.solver.SolverManager
+import java.time.LocalDateTime
 import java.util.*
 import javax.annotation.security.RolesAllowed
 import javax.inject.Inject
@@ -75,11 +76,11 @@ data class EventPartDto(
     val eventId: UUID?,
     val part: Int?,
     val lastPart: Boolean?,
-    val startDate: String?,
-    val endDate: String?,
+    val startDate: LocalDateTime?,
+    val endDate: LocalDateTime?,
     val taskId: UUID?,
-    val softDeadline: String?,
-    val hardDeadline: String?,
+    val softDeadline: LocalDateTime?,
+    val hardDeadline: LocalDateTime?,
     val meetingId: UUID?,
     val userId: String?,
     val hostId: String?,
@@ -279,11 +280,11 @@ class TimeTableResource {
                 eventId = ep.eventId,
                 part = ep.part,
                 lastPart = ep.lastPart,
-                startDate = ep.startDate?.toString(),
-                endDate = ep.endDate?.toString(),
+                startDate = ep.startDate,
+                endDate = ep.endDate,
                 taskId = ep.taskId,
-                softDeadline = ep.softDeadline?.toString(),
-                hardDeadline = ep.hardDeadline?.toString(),
+                softDeadline = ep.softDeadline,
+                hardDeadline = ep.hardDeadline,
                 meetingId = ep.meetingId,
                 userId = ep.userId?.toString(),
                 hostId = ep.hostId?.toString(),

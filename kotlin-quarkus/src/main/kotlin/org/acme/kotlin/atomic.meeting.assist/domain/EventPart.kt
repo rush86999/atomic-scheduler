@@ -4,7 +4,9 @@ import org.optaplanner.core.api.domain.entity.PlanningEntity
 import org.optaplanner.core.api.domain.lookup.PlanningId
 import org.optaplanner.core.api.domain.variable.PlanningVariable
 import java.time.DayOfWeek
+import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.*
 import javax.persistence.*
 
@@ -28,12 +30,12 @@ class EventPart {
     var lastPart: Int = 1
     var meetingPart: Int = -1
     var meetingLastPart: Int = -1
-    lateinit var startDate: String
-    lateinit var endDate: String
+    lateinit var startDate: LocalDateTime
+    lateinit var endDate: LocalDateTime
 
     var taskId: String? = null
-    var softDeadline: String? = null
-    var hardDeadline: String? = null
+    var softDeadline: LocalDateTime? = null
+    var hardDeadline: LocalDateTime? = null
     lateinit var userId: UUID
     lateinit var hostId: UUID
     var meetingId: String? = null
@@ -84,11 +86,11 @@ class EventPart {
         this.groupId = groupId
         this.part = part
         this.lastPart = lastPart
-        this.endDate = endDate.trim()
-        this.startDate = startDate.trim()
+        this.startDate = LocalDateTime.parse(startDate.trim(), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        this.endDate = LocalDateTime.parse(endDate.trim(), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
         this.taskId = taskId?.trim()
-        this.softDeadline = softDeadline?.trim()
-        this.hardDeadline = hardDeadline?.trim()
+        this.softDeadline = softDeadline?.trim()?.let { LocalDateTime.parse(it, DateTimeFormatter.ISO_LOCAL_DATE_TIME) }
+        this.hardDeadline = hardDeadline?.trim()?.let { LocalDateTime.parse(it, DateTimeFormatter.ISO_LOCAL_DATE_TIME) }
         this.userId = userId
         this.user = user
         this.priority = priority
@@ -136,7 +138,7 @@ class EventPart {
                 dailyTaskList: Boolean, weeklyTaskList: Boolean, timeslot: Timeslot?, gap: Boolean,
                 preferredStartTimeRange: LocalTime?, preferredEndTimeRange: LocalTime?, totalWorkingHours: Int,
                 eventId: String, event: Event, hostId: UUID,
-                meetingId: String?, meetingPart: Int, meetingLastPart: Int,
+                meetingId: String?, meetingPart: Int, meetingLastPart: Int
     )
             : this(groupId, part, lastPart, startDate, endDate, taskId, softDeadline, hardDeadline, userId, user,
         priority, isPreEvent, isPostEvent, forEventId,
@@ -145,7 +147,7 @@ class EventPart {
         modifiable, preferredDayOfWeek, preferredTime, isMeeting,
         isExternalMeeting, isExternalMeetingModifiable, isMeetingModifiable,
         dailyTaskList, weeklyTaskList, gap, preferredStartTimeRange, preferredEndTimeRange, totalWorkingHours,
-        eventId, event, hostId, meetingId, meetingPart, meetingLastPart,
+        eventId, event, hostId, meetingId, meetingPart, meetingLastPart
     ) {
         this.id = id
         this.timeslot = timeslot

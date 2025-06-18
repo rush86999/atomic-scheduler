@@ -3,6 +3,7 @@ package org.acme.kotlin.atomic.meeting.assist.domain
 import org.hibernate.annotations.Type
 import org.optaplanner.core.api.domain.lookup.PlanningId
 import java.time.DayOfWeek
+import java.time.LocalDate
 import java.time.LocalTime
 import java.util.*
 import javax.persistence.*
@@ -26,24 +27,26 @@ class Timeslot {
     lateinit var endTime: LocalTime
     @Type(type = "org.acme.kotlin.atomic.meeting.assist.domain.MonthDay")
     lateinit var monthDay: MonthDay
+    lateinit var date: LocalDate
 
     // No-arg constructor required for Hibernate
     constructor()
 
-    constructor(dayOfWeek: DayOfWeek, startTime: LocalTime, endTime: LocalTime, monthDay: MonthDay, userId: UUID?) {
+    constructor(dayOfWeek: DayOfWeek, startTime: LocalTime, endTime: LocalTime, monthDay: MonthDay, userId: UUID?, date: LocalDate) {
         this.dayOfWeek = dayOfWeek
         this.startTime = startTime
         this.endTime = endTime
         this.hostId = userId
         this.monthDay = monthDay
+        this.date = date
     }
 
-    constructor(id: Long?, dayOfWeek: DayOfWeek, startTime: LocalTime, endTime: LocalTime, monthDay: MonthDay, userId: UUID?)
-            : this(dayOfWeek, startTime, endTime, monthDay, userId) {
+    constructor(id: Long?, dayOfWeek: DayOfWeek, startTime: LocalTime, endTime: LocalTime, monthDay: MonthDay, userId: UUID?, date: LocalDate)
+            : this(dayOfWeek, startTime, endTime, monthDay, userId, date) {
         this.id = id
     }
 
-    override fun toString(): String = "$dayOfWeek $startTime"
+    override fun toString(): String = "$date $dayOfWeek $startTime"
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -55,6 +58,7 @@ class Timeslot {
         if (endTime != other.endTime) return false
         if (monthDay != other.monthDay) return false
         if (hostId != other.hostId) return false
+        if (date != other.date) return false
 
         return true
     }
@@ -65,6 +69,7 @@ class Timeslot {
         result = 31 * result + endTime.hashCode()
         result = 31 * result + startTime.hashCode()
         result = 31 * result + hostId.hashCode()
+        result = 31 * result + date.hashCode()
         return result
     }
 

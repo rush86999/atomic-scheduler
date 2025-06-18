@@ -11,6 +11,7 @@ import org.optaplanner.core.api.score.stream.ConstraintProvider
 import org.optaplanner.core.api.score.stream.Joiners
 import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.MonthDay
 
@@ -66,71 +67,85 @@ class TimeTableConstraintProvider : ConstraintProvider {
 
     // Helper for preferred start times
     private fun isOutsidePreferredStartTimeRanges(eventPart: EventPart): Boolean {
-        if (eventPart.event.preferredTimeRanges.isNullOrEmpty() || eventPart.timeslot == null || eventPart.timeslot?.startTime == null || eventPart.timeslot?.dayOfWeek == null) {
-            return false // No preferences to violate or not enough info to check, so not "outside"
+        // Ensure necessary fields are present to perform the check
+        if (eventPart.event.preferredTimeRanges.isNullOrEmpty() ||
+            eventPart.timeslot?.date == null || // Added null check for date
+            eventPart.timeslot?.startTime == null ||
+            eventPart.timeslot?.endTime == null || // endTime also needed for duration
+            eventPart.timeslot?.dayOfWeek == null) {
+            return false // Not enough info or no preferences, so not "outside"
         }
-        if (eventPart.part != 1) { // Only check for the first part of an event
+        // This constraint applies only to the first part of a multi-part event
+        if (eventPart.part != 1) {
             return false
         }
 
         val timeslot = eventPart.timeslot!!
         val workTime = eventPart.user.workTimes.find { wt -> wt.dayOfWeek == timeslot.dayOfWeek }
-            ?: return true // No work time defined for the day, so it's effectively outside any valid range for work
+            ?: return true // No work time for this day, so any timeslot is outside working hours
 
-        if (workTime.endTime == null) return true // Work end time not defined, cannot ensure event fits
+        if (workTime.startTime == null || workTime.endTime == null) {
+            return true // Work time start/end not defined, cannot ensure event fits
+        }
 
-        val totalParts = eventPart.lastPart
-        // Use a default duration if endTime is somehow null, though timeslot properties should be set
-        val partEndTimeForDurationCalc = timeslot.endTime ?: timeslot.startTime!!.plusMinutes(15) // Default 15 min if endTime null
-        val partDuration = Duration.between(timeslot.startTime, partEndTimeForDurationCalc)
-        val totalDuration = Duration.ofMinutes(totalParts * partDuration.toMinutes())
+        // Calculate event start and end LocalDateTime
+        val eventPartStartDateTime = LocalDateTime.of(timeslot.date!!, timeslot.startTime!!)
 
-        val actualEventEndTime = timeslot.startTime!!.plus(totalDuration)
-        if (actualEventEndTime > workTime.endTime) {
+        val partDuration = Duration.between(timeslot.startTime!!, timeslot.endTime!!)
+        val totalEventDuration = Duration.ofMinutes(eventPart.lastPart * partDuration.toMinutes())
+        val eventOverallEndDateTime = eventPartStartDateTime.plus(totalEventDuration)
+
+        // Check if event exceeds working hours for that day
+        val workEndDateTime = LocalDateTime.of(timeslot.date!!, workTime.endTime!!)
+        if (eventOverallEndDateTime > workEndDateTime) {
             return true // Event exceeds working hours
         }
 
+        // Check against preferred time ranges
         val preferredTimeRanges = eventPart.event.preferredTimeRanges!!
-        var countMatchingAtOrAfter = 0
-        for (timeRange in preferredTimeRanges) {
-            if (timeRange.startTime == null) continue
-
-            if (timeRange.dayOfWeek == null || timeRange.dayOfWeek == timeslot.dayOfWeek) { // Time range applies to this day
-                if (timeslot.startTime!! >= timeRange.startTime) { // Event starts at or after preferred start
-                    countMatchingAtOrAfter++
-                }
-            }
+        // True if no preferred range matches.
+        // An event part is considered inside preferred start time if its start time is >= any preferred start time for that day.
+        val isInsideAnyPreferredRange = preferredTimeRanges.any { timeRange ->
+            if (timeRange.startTime == null) return@any false // Skip ill-defined preferred range
+            // Check if preferredTR applies to the eventPart's dayOfWeek (can be null on TR for any day)
+            (timeRange.dayOfWeek == null || timeRange.dayOfWeek == timeslot.dayOfWeek) &&
+            // Compare LocalTime part only, as dayOfWeek is already matched
+            (timeslot.startTime!! >= timeRange.startTime!!)
         }
-        // If no preferred time range is met (event starts before all of them for the correct day), it's outside.
-        return countMatchingAtOrAfter == 0
+
+        return !isInsideAnyPreferredRange // Outside if not inside any
     }
 
     // Helper for preferred end times
     private fun isOutsidePreferredEndTimeRanges(eventPart: EventPart): Boolean {
-        if (eventPart.event.preferredTimeRanges.isNullOrEmpty() || eventPart.timeslot == null || eventPart.timeslot?.endTime == null || eventPart.timeslot?.dayOfWeek == null) {
-            return false // No preferences to violate or not enough info, so not "outside"
+        if (eventPart.event.preferredTimeRanges.isNullOrEmpty() ||
+            eventPart.timeslot?.date == null || // Added null check for date
+            eventPart.timeslot?.startTime == null || // startTime needed for duration calc
+            eventPart.timeslot?.endTime == null ||
+            eventPart.timeslot?.dayOfWeek == null) {
+            return false // Not enough info or no preferences
         }
-         if (eventPart.part != eventPart.lastPart) { // Only check for the last part of an event
+        // This constraint applies only to the last part of a multi-part event
+        if (eventPart.part != eventPart.lastPart) {
             return false
         }
 
-        val timeslot = eventPart.timeslot!!
-        // No direct workTime check here as it's about preferred end, not work boundaries,
-        // but work boundaries are inherently checked by solver placing the event part.
+        val timeslot = eventPart.timeslot!! // This is the timeslot of the *last part*
 
+        // Calculate the actual end LocalDateTime of this event part (which is the last part)
+        // val eventPartActualEndDateTime = LocalDateTime.of(timeslot.date!!, timeslot.endTime!!) // Not directly needed for comparison logic below
+
+        // Check against preferred time ranges
         val preferredTimeRanges = eventPart.event.preferredTimeRanges!!
-        var countMatchingAtOrBefore = 0
-        for (timeRange in preferredTimeRanges) {
-            if (timeRange.endTime == null) continue
-
-            if (timeRange.dayOfWeek == null || timeRange.dayOfWeek == timeslot.dayOfWeek) { // Time range applies to this day
-                if (timeslot.endTime!! <= timeRange.endTime) { // Event ends at or before preferred end
-                    countMatchingAtOrBefore++
-                }
-            }
+        // True if no preferred range matches.
+        // An event part is considered inside preferred end time if its end time is <= any preferred end time for that day.
+        val isInsideAnyPreferredRange = preferredTimeRanges.any { timeRange ->
+            if (timeRange.endTime == null) return@any false // Skip ill-defined preferred range
+            (timeRange.dayOfWeek == null || timeRange.dayOfWeek == timeslot.dayOfWeek) &&
+            (timeslot.endTime!! <= timeRange.endTime!!)
         }
-        // If no preferred time range is met (event ends after all of them for the correct day), it's outside.
-        return countMatchingAtOrBefore == 0
+
+        return !isInsideAnyPreferredRange // Outside if not inside any
     }
 
 
@@ -421,34 +436,18 @@ class TimeTableConstraintProvider : ConstraintProvider {
     }
 
     fun hardDeadlineConflictHardPenalize(constraintFactory: ConstraintFactory): Constraint {
-        // hard deadline missed for day of week or time of day
+        // hard deadline missed
         return constraintFactory
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart ->
-                eventPart.hardDeadline != null && eventPart.timeslot != null
+                eventPart.hardDeadline != null && eventPart.timeslot != null &&
+                eventPart.timeslot?.endTime != null && eventPart.timeslot?.date != null // Assuming timeslot.date exists
             }
             .filter { eventPart: EventPart ->
-                // Pre-parse date/time strings
-                val deadlineStr = eventPart.hardDeadline!! // Null checked in previous filter
-                // Assuming hardDeadline is in ISO-like format "YYYY-MM-DDTHH:MM:SS..."
-                // Robust parsing would involve DateTimeFormatter if format can vary significantly.
-                // For now, using substring as per original logic, but with safety.
-                val deadlineDate = LocalDate.parse(deadlineStr.substring(0, 10))
-                val deadlineTime = LocalTime.parse(deadlineStr.substring(11, 19)) // Assuming "HH:MM:SS"
-                val deadlineMonthDay = MonthDay.from(deadlineDate)
-
-                val timeslot = eventPart.timeslot!! // Null checked in previous filter
-
-                // Ensure timeslot fields are not null before comparison
-                if (timeslot.dayOfWeek == null || timeslot.monthDay == null || timeslot.endTime == null) {
-                    return@filter false // Or handle as a violation if this state is invalid
-                }
-
-                (timeslot.dayOfWeek > deadlineDate.dayOfWeek) ||
-                        (timeslot.monthDay > deadlineMonthDay) ||
-                        ((timeslot.monthDay == deadlineMonthDay) &&
-                         (timeslot.dayOfWeek == deadlineDate.dayOfWeek) &&
-                         (timeslot.endTime > deadlineTime))
+                val deadlineDateTime = eventPart.hardDeadline!!
+                val timeslot = eventPart.timeslot!!
+                val eventPartEndDateTime = LocalDateTime.of(timeslot.date!!, timeslot.endTime!!)
+                eventPartEndDateTime > deadlineDateTime
             }
             .penalize("missed hard Deadline hard penalize", HardMediumSoftScore.ONE_HARD)
     }
@@ -459,26 +458,15 @@ class TimeTableConstraintProvider : ConstraintProvider {
             .filter { eventPart: EventPart ->
                 !eventPart.modifiable &&
                 eventPart.part == 1 &&
-                eventPart.startDate != null && // Ensure startDate is not null
-                eventPart.timeslot != null
+                eventPart.startDate != null && // This is LocalDateTime now
+                eventPart.timeslot != null &&
+                eventPart.timeslot?.startTime != null && eventPart.timeslot?.date != null // Assuming timeslot.date
             }
             .filter { eventPart: EventPart ->
-                // Pre-parse start date/time strings
-                val startDateStr = eventPart.startDate!! // Null checked
-                val originalStartDate = LocalDate.parse(startDateStr.substring(0, 10))
-                val originalStartTime = LocalTime.parse(startDateStr.substring(11, 19))
-                val originalMonthDay = MonthDay.from(originalStartDate)
-
-                val timeslot = eventPart.timeslot!! // Null checked
-
-                // Ensure timeslot fields are not null before comparison
-                if (timeslot.startTime == null || timeslot.dayOfWeek == null || timeslot.monthDay == null) {
-                    return@filter true // Penalize if timeslot parts are unexpectedly null
-                }
-
-                (originalStartTime != timeslot.startTime) ||
-                        (originalStartDate.dayOfWeek != timeslot.dayOfWeek) ||
-                        (originalMonthDay != timeslot.monthDay)
+                val originalStartDateTime = eventPart.startDate!!
+                val timeslot = eventPart.timeslot!!
+                val currentEventPartStartDateTime = LocalDateTime.of(timeslot.date!!, timeslot.startTime!!)
+                currentEventPartStartDateTime != originalStartDateTime
             }
             .penalize("event is not modifiable but time or day changed hard penalize", HardMediumSoftScore.ONE_HARD)
     }
@@ -518,13 +506,11 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 eventPart.endDate != null && eventPart.timeslot != null && eventPart.timeslot?.monthDay != null
             }
             .filter { eventPart: EventPart ->
-                // Pre-parse end date string
-                val endDateStr = eventPart.endDate!! // Null checked
-                // Using substring(5, 10) for "MM-DD" and prepending "--" to form "--MM-DD" for MonthDay.parse
-                val endMonthDay = MonthDay.parse("--${endDateStr.substring(5, 10)}")
+                // eventPart.endDate is LocalDateTime?, timeslot and monthDay null checked in previous filter
+                val endMonthDay = MonthDay.from(eventPart.endDate!!) // Convert LocalDateTime to MonthDay
 
                 (eventPart.dailyTaskList || (!eventPart.weeklyTaskList)) &&
-                        (endMonthDay != eventPart.timeslot!!.monthDay) // timeslot and monthDay null checked
+                        (endMonthDay != eventPart.timeslot!!.monthDay)
             }
             .penalize("end date monthDay is different from timeslot monthDay soft penalize", HardMediumSoftScore.ONE_SOFT)
     }
@@ -547,56 +533,32 @@ class TimeTableConstraintProvider : ConstraintProvider {
             .filter { eventPart: EventPart -> eventPart.negativeImpactDayOfWeek == null }
             .filter { eventPart: EventPart ->
                 eventPart.part == 1 &&
-                eventPart.startDate != null && // Ensure startDate is not null
-                eventPart.timeslot != null
+                eventPart.startDate != null && // This is LocalDateTime now
+                eventPart.timeslot != null &&
+                eventPart.timeslot?.startTime != null && eventPart.timeslot?.date != null // Assuming timeslot.date
             }
             .filter { eventPart: EventPart ->
-                // Pre-parse start date/time strings
-                val startDateStr = eventPart.startDate!! // Null checked
-                val originalStartDate = LocalDate.parse(startDateStr.substring(0, 10))
-                val originalStartTime = LocalTime.parse(startDateStr.substring(11, 19))
-                val originalMonthDay = MonthDay.from(originalStartDate)
-
-                val timeslot = eventPart.timeslot!! // Null checked
-
-                // Ensure timeslot fields are not null before comparison
-                if (timeslot.dayOfWeek == null || timeslot.startTime == null || timeslot.monthDay == null) {
-                    return@filter true // Penalize if timeslot parts are unexpectedly null
-                }
-
-                (timeslot.dayOfWeek != originalStartDate.dayOfWeek) ||
-                        (timeslot.startTime != originalStartTime) ||
-                        (timeslot.monthDay != originalMonthDay)
+                val originalStartDateTime = eventPart.startDate!!
+                val timeslot = eventPart.timeslot!!
+                val currentEventPartStartDateTime = LocalDateTime.of(timeslot.date!!, timeslot.startTime!!)
+                currentEventPartStartDateTime != originalStartDateTime
             }
             .penalize("not equal start date for a non task soft penalize", HardMediumSoftScore.ONE_SOFT)
     }
 
     fun softDeadlineConflictSoftPenalize(constraintFactory: ConstraintFactory): Constraint {
-        // soft deadline missed for day of week or monthDay or time of day
+        // soft deadline missed
         return constraintFactory
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart ->
-                eventPart.softDeadline != null && eventPart.timeslot != null
+                eventPart.softDeadline != null && eventPart.timeslot != null &&
+                eventPart.timeslot?.endTime != null && eventPart.timeslot?.date != null // Assuming timeslot.date exists
             }
             .filter { eventPart: EventPart ->
-                // Pre-parse soft deadline string
-                val deadlineStr = eventPart.softDeadline!! // Null checked
-                val deadlineDate = LocalDate.parse(deadlineStr.substring(0, 10))
-                val deadlineTime = LocalTime.parse(deadlineStr.substring(11, 19))
-                val deadlineMonthDay = MonthDay.from(deadlineDate)
-
-                val timeslot = eventPart.timeslot!! // Null checked
-
-                // Ensure timeslot fields are not null for comparison
-                if (timeslot.dayOfWeek == null || timeslot.monthDay == null || timeslot.endTime == null) {
-                    return@filter false // Or handle as a violation
-                }
-
-                (timeslot.dayOfWeek > deadlineDate.dayOfWeek) ||
-                        (timeslot.monthDay > deadlineMonthDay) ||
-                        ((timeslot.monthDay == deadlineMonthDay) &&
-                         (timeslot.dayOfWeek == deadlineDate.dayOfWeek) &&
-                         (timeslot.endTime > deadlineTime))
+                val deadlineDateTime = eventPart.softDeadline!!
+                val timeslot = eventPart.timeslot!!
+                val eventPartEndDateTime = LocalDateTime.of(timeslot.date!!, timeslot.endTime!!)
+                eventPartEndDateTime > deadlineDateTime
             }
             .penalize("missed soft Deadline soft penalize", HardMediumSoftScore.ONE_SOFT)
     }
@@ -610,27 +572,35 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 eventPart.positiveImpactScore > 0
             }
             .filter { eventPart: EventPart -> eventPart.part == 1 }
-            .filter { eventPart: EventPart -> eventPart.timeslot?.startTime != null && eventPart.timeslot?.endTime != null }
             .filter { eventPart: EventPart ->
-                val totalParts = eventPart.lastPart
-                val timeslot = eventPart.timeslot!! // startTime and endTime checked by previous filter
-                val partDuration = Duration.between(timeslot.startTime, timeslot.endTime)
-                val totalMinutes = totalParts * partDuration.toMinutes()
-                val totalDuration = Duration.ofMinutes(totalMinutes)
+                eventPart.timeslot?.date != null && // Ensure date is available
+                eventPart.timeslot?.startTime != null &&
+                eventPart.timeslot?.endTime != null
+            }
+            .filter { eventPart: EventPart ->
+                val timeslot = eventPart.timeslot!!
+                val partDuration = Duration.between(timeslot.startTime!!, timeslot.endTime!!)
+                val totalEventDuration = Duration.ofMinutes(eventPart.lastPart * partDuration.toMinutes())
+
+                val eventPartStartDateTime = LocalDateTime.of(timeslot.date!!, timeslot.startTime!!)
+                val eventOverallEndDateTime = eventPartStartDateTime.plus(totalEventDuration)
+
                 val workTime = eventPart.user.workTimes.find { wt -> wt.dayOfWeek == timeslot.dayOfWeek }
-
-                if (workTime == null || workTime.endTime == null) {
-                    return@filter true // Penalize if work time/end time undefined, making "within bounds" check fail
+                if (workTime?.endTime == null) { // Also check workTime itself for null
+                    return@filter true // Penalize if work time/end time undefined
                 }
+                val workEndDateTime = LocalDateTime.of(timeslot.date!!, workTime.endTime!!)
+                if (eventOverallEndDateTime > workEndDateTime) {
+                    return@filter true // Event exceeds working hours, so it's not a "positive impact" placement
+                }
+
                 if (eventPart.positiveImpactDayOfWeek == null || eventPart.positiveImpactTime == null) {
-                    return@filter false // Cannot evaluate if preferred impact time/day is not set
+                    return@filter false // No specific positive impact day/time defined, so no penalty from this rule
                 }
 
-                val possibleEndTime = timeslot.startTime!!.plus(totalDuration) // startTime checked
-
-                ((eventPart.positiveImpactDayOfWeek!! < timeslot.dayOfWeek) || (eventPart.positiveImpactDayOfWeek!! > timeslot.dayOfWeek)) ||
-                        ((eventPart.positiveImpactTime!! < timeslot.startTime) || (eventPart.positiveImpactTime!! > timeslot.startTime)) ||
-                        (possibleEndTime > workTime.endTime)
+                // Penalize if not on the positive impact day OR not at the positive impact time
+                (eventPart.positiveImpactDayOfWeek!! != timeslot.dayOfWeek) ||
+                (eventPart.positiveImpactTime!! != timeslot.startTime!!)
             }
             .penalize("positive impact time score based slot preference not provided medium penalize", HardMediumSoftScore.ONE_MEDIUM)
     }
@@ -663,26 +633,41 @@ class TimeTableConstraintProvider : ConstraintProvider {
             .forEach(EventPart::class.java)
             .filter { eventPart: EventPart -> eventPart.preferredTime != null }
             .filter { eventPart: EventPart -> eventPart.part == 1 }
-            .filter { eventPart: EventPart -> eventPart.timeslot?.startTime != null && eventPart.timeslot?.endTime != null }
             .filter { eventPart: EventPart ->
-                val totalParts = eventPart.lastPart
-                val timeslot = eventPart.timeslot!! // startTime and endTime checked by previous filter
-                val partDuration = Duration.between(timeslot.startTime, timeslot.endTime)
-                val totalMinutes = totalParts * partDuration.toMinutes()
-                val totalDuration = Duration.ofMinutes(totalMinutes)
-                val workTime = eventPart.user.workTimes.find { wt -> wt.dayOfWeek == timeslot.dayOfWeek }
-
-                if (workTime == null || workTime.endTime == null || eventPart.preferredTime == null) {
-                     // If work time, its end, or preferred time is not set, cannot make a valid comparison or it's out of bounds.
-                    return@filter true // Consider it a conflict or un-schedulable according to this rule.
-                }
-                val possibleEndTime = timeslot.startTime!!.plus(totalDuration) // startTime checked
-
-                (possibleEndTime < workTime.endTime) // Check if within work hours first
+                eventPart.timeslot?.date != null && // Ensure date is available
+                eventPart.timeslot?.startTime != null &&
+                eventPart.timeslot?.endTime != null
             }
-            .filter { eventPart: EventPart -> // eventPart.preferredTime is checked in previous filter indirectly
-                val timeslot = eventPart.timeslot!! // Checked not null
-                ((eventPart.preferredTime!! < timeslot.startTime) || (eventPart.preferredTime!! > timeslot.startTime))
+            .filter { eventPart: EventPart -> // This filter now focuses purely on the preferred time match
+                val timeslot = eventPart.timeslot!! // Null checks done in prior filters
+                // Penalize if preferredTime is set and does not match the timeslot's startTime.
+                // The check for fitting within working hours should be handled by other constraints (like outOfWorkTimesBoundary).
+                // Or, if this constraint should ONLY penalize if it's within working hours but not at preferred time:
+
+                val partDuration = Duration.between(timeslot.startTime!!, timeslot.endTime!!)
+                val totalEventDuration = Duration.ofMinutes(eventPart.lastPart * partDuration.toMinutes())
+                val eventPartStartDateTime = LocalDateTime.of(timeslot.date!!, timeslot.startTime!!)
+                val eventOverallEndDateTime = eventPartStartDateTime.plus(totalEventDuration)
+
+                val workTime = eventPart.user.workTimes.find { wt -> wt.dayOfWeek == timeslot.dayOfWeek }
+                // If workTime or endTime is null, or preferredTime is null (already filtered by previous .filter { eventPart: EventPart -> eventPart.preferredTime != null }),
+                // it's hard to apply this rule.
+                if (workTime?.endTime == null) {
+                    return@filter false // Cannot determine if it's within working hours, so don't apply this penalty.
+                                        // Other constraints might penalize for being outside work hours.
+                }
+                val workEndDateTime = LocalDateTime.of(timeslot.date!!, workTime.endTime!!)
+
+                val isWithinWorkTime = eventOverallEndDateTime <= workEndDateTime
+
+                if (!isWithinWorkTime) {
+                    return@filter false // If it's not even within working time, this specific "not preferred start time" penalty shouldn't apply.
+                                        // Let "out of work bounds" constraints handle it.
+                }
+
+                // Penalize if it IS within work time BUT start time is not the preferred one.
+                // eventPart.preferredTime is guaranteed non-null by the first filter of this constraint.
+                eventPart.preferredTime!! != timeslot.startTime!!
             }
             .penalize("preferred startTime not given medium penalize", HardMediumSoftScore.ONE_MEDIUM)
     }
@@ -771,25 +756,15 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 eventPart.isExternalMeeting &&
                 !eventPart.isExternalMeetingModifiable &&
                 eventPart.part == 1 &&
-                eventPart.startDate != null && // Ensure startDate is not null
-                eventPart.timeslot != null
+                eventPart.startDate != null && // This is LocalDateTime now
+                eventPart.timeslot != null &&
+                eventPart.timeslot?.startTime != null && eventPart.timeslot?.date != null // Assuming timeslot.date
             }
             .filter { eventPart: EventPart ->
-                val startDateStr = eventPart.startDate!! // Null checked
-                val originalStartDate = LocalDate.parse(startDateStr.substring(0, 10))
-                val originalStartTime = LocalTime.parse(startDateStr.substring(11, 19))
-                val originalMonthDay = MonthDay.from(originalStartDate)
-
-                val timeslot = eventPart.timeslot!! // Null checked
-
-                // Ensure timeslot fields are not null for comparison
-                if (timeslot.startTime == null || timeslot.dayOfWeek == null || timeslot.monthDay == null) {
-                    return@filter true // Penalize if timeslot parts are unexpectedly null
-                }
-
-                (originalStartTime != timeslot.startTime) ||
-                        (originalStartDate.dayOfWeek != timeslot.dayOfWeek) ||
-                        (originalMonthDay != timeslot.monthDay)
+                val originalStartDateTime = eventPart.startDate!!
+                val timeslot = eventPart.timeslot!!
+                val currentEventPartStartDateTime = LocalDateTime.of(timeslot.date!!, timeslot.startTime!!)
+                currentEventPartStartDateTime != originalStartDateTime
             }
             .penalize("event is an external meeting and not modifiable but time or day was changed medium penalize", HardMediumSoftScore.ONE_MEDIUM)
     }
@@ -801,25 +776,15 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 !eventPart.isMeetingModifiable &&
                 eventPart.isMeeting &&
                 eventPart.part == 1 &&
-                eventPart.startDate != null && // Ensure startDate is not null
-                eventPart.timeslot != null
+                eventPart.startDate != null && // This is LocalDateTime now
+                eventPart.timeslot != null &&
+                eventPart.timeslot?.startTime != null && eventPart.timeslot?.date != null // Assuming timeslot.date
             }
             .filter { eventPart: EventPart ->
-                val startDateStr = eventPart.startDate!! // Null checked
-                val originalStartDate = LocalDate.parse(startDateStr.substring(0, 10))
-                val originalStartTime = LocalTime.parse(startDateStr.substring(11, 19))
-                val originalMonthDay = MonthDay.from(originalStartDate)
-
-                val timeslot = eventPart.timeslot!! // Null checked
-
-                // Ensure timeslot fields are not null for comparison
-                if (timeslot.startTime == null || timeslot.dayOfWeek == null || timeslot.monthDay == null) {
-                    return@filter true // Penalize if timeslot parts are unexpectedly null
-                }
-
-                (originalStartTime != timeslot.startTime) ||
-                        (originalStartDate.dayOfWeek != timeslot.dayOfWeek) ||
-                        (originalMonthDay != timeslot.monthDay)
+                val originalStartDateTime = eventPart.startDate!!
+                val timeslot = eventPart.timeslot!!
+                val currentEventPartStartDateTime = LocalDateTime.of(timeslot.date!!, timeslot.startTime!!)
+                currentEventPartStartDateTime != originalStartDateTime
             }
             .penalize("event is a meeting and not modifiable but time or day was changed medium penalize", HardMediumSoftScore.ONE_MEDIUM)
     }
@@ -838,19 +803,10 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 { eventPart: EventPart -> eventPart.timeslot?.monthDay }, // Then by day
                 { eventPart: EventPart -> eventPart.totalWorkingHours }, // Include user's daily total hours for this day
                 sum { eventPart: EventPart ->
-                    // Safe parsing of start/end times for duration calculation
-                    try {
-                        if (eventPart.startDate != null && eventPart.endDate != null &&
-                            eventPart.startDate.length >= 19 && eventPart.endDate.length >= 19) {
-                            val startTime = LocalTime.parse(eventPart.startDate.substring(11, 19))
-                            val endTime = LocalTime.parse(eventPart.endDate.substring(11, 19))
-                            Duration.between(startTime, endTime).toMinutes().toInt()
-                        } else {
-                            0 // Event part with missing start/end time contributes 0 to workload
-                        }
-                    } catch (e: Exception) {
-                        // Log error or handle as appropriate if parsing fails for valid-looking strings
-                        0 // On parsing error, contribute 0 to workload for this part
+                    if (eventPart.startDate != null && eventPart.endDate != null) {
+                        Duration.between(eventPart.startDate, eventPart.endDate).toMinutes().toInt()
+                    } else {
+                        0
                     }
                 }
             )
