@@ -33,8 +33,8 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 eventPartsReversedHardPenalize(constraintFactory),
                 hardDeadlineConflictHardPenalize(constraintFactory),
                 modifiableConflictHardPenalize(constraintFactory),
-                notPreferredStartTimeOfTimeRangesHardPenalize(constraintFactory),
-                notPreferredEndTimeOfTimeRangesHardPenalize(constraintFactory),
+                // Removed notPreferredStartTimeOfTimeRangesHardPenalize - keeping Medium
+                // Removed notPreferredEndTimeOfTimeRangesHardPenalize - keeping Medium
                 meetingWithSameEventSlotHardConflict(constraintFactory),
 
                 // Medium constraints
@@ -58,8 +58,8 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 differentMonthDayConflictSoftPenalize(constraintFactory),
                 notEqualStartDateForNonTaskSoftPenalize(constraintFactory),
                 softDeadlineConflictSoftPenalize(constraintFactory),
-                notPreferredStartTimeOfTimeRangesSoftPenalize(constraintFactory),
-                notPreferredEndTimeOfTimeRangesSoftPenalize(constraintFactory),
+                // Removed notPreferredStartTimeOfTimeRangesSoftPenalize - keeping Medium
+                // Removed notPreferredEndTimeOfTimeRangesSoftPenalize - keeping Medium
                 maxWorkloadConflictSoftPenalize(constraintFactory),
                 minNumberOfBreaksConflictSoftPenalize(constraintFactory),
         )
@@ -271,62 +271,45 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 // Ensure timeslots and their necessary properties are non-null
                 val ts1 = eventPart1.timeslot
                 val ts2 = eventPart2.timeslot
-                if (ts1?.startTime == null || ts1.endTime == null || ts2?.startTime == null ||
+                if (ts1?.startTime == null || ts1.endTime == null || ts2?.startTime == null || // Keep basic null checks
                     ts1.dayOfWeek == null || ts2.dayOfWeek == null || ts1.monthDay == null || ts2.monthDay == null) {
-                    return@filter true // Penalize if essential time information is missing
+                    return@filter true // Penalize if essential time information is missing for day/monthDay comparison
                 }
 
-                val actualBetween = Duration.between(ts1.startTime, ts2.startTime)
-                val partDuration = Duration.between(ts1.startTime, ts1.endTime)
-                val partDiff = eventPart2.part - eventPart1.part
-                val expectedMinutes = partDiff * partDuration.toMinutes()
-
-                (actualBetween.isNegative || // Part2 starts before Part1 (unexpected for LATER parts)
-                        (ts1.dayOfWeek != ts2.dayOfWeek) ||
-                        (ts1.monthDay != ts2.monthDay) ||
-                        (actualBetween.toMinutes() != expectedMinutes))
+                // Simplified: Penalize if any two parts of the same event are on different days or monthDays.
+                // The detailed contiguity and gap checks are handled by sequentialEventPartsDisconnectedByTimeHardPenalize.
+                (ts1.dayOfWeek != ts2.dayOfWeek) || (ts1.monthDay != ts2.monthDay)
             }
-            .penalize("Event parts disconnected by time hard penalize", HardMediumSoftScore.ONE_HARD)
+            .penalize("Event parts on different days hard penalize", HardMediumSoftScore.ONE_HARD) // Renamed for clarity
 
     }
 
     fun firstAndLastPartDisconnectedByTimeHardPenalize(constraintFactory: ConstraintFactory): Constraint {
-        // event parts need to be connected together sequentially
+        // Ensures the entire event (from start of first part to end of last part) occurs on the same calendar day.
         return constraintFactory
             .forEach(EventPart::class.java)
             .join(EventPart::class.java,
                 Joiners.equal(EventPart::groupId),
-                Joiners.lessThan(EventPart::part),
+                Joiners.lessThan(EventPart::part), // Ensures eventPart1 is an earlier part than eventPart2
             )
             .filter { eventPart1: EventPart, eventPart2: EventPart ->
+                // Apply this only to the actual first and last parts of the event group
                 (eventPart1.part == 1) && (eventPart2.part == eventPart2.lastPart)
             }
             .filter { eventPart1: EventPart, eventPart2: EventPart ->
                 // Ensure timeslots and their necessary properties are non-null
                 val ts1 = eventPart1.timeslot
                 val ts2 = eventPart2.timeslot
-                if (ts1?.startTime == null || ts1.endTime == null || ts2?.endTime == null ||
-                    ts1.dayOfWeek == null || ts2.dayOfWeek == null || ts1.monthDay == null || ts2.monthDay == null) {
-                    return@filter true // Penalize if essential time information is missing
+                if (ts1?.dayOfWeek == null || ts1.monthDay == null || ts2?.dayOfWeek == null || ts2.monthDay == null) {
+                    return@filter true // Penalize if essential time information is missing for day/monthDay comparison
                 }
 
-                val between = Duration.between(ts1.startTime, ts2.endTime)
-                val partDuration = Duration.between(ts1.startTime, ts1.endTime) // Duration of the first part
-                // expectedDuration should be the sum of durations of all parts from eventPart1 to eventPart2.
-                // This is complex if parts have variable durations.
-                // The original logic `eventPart1.lastPart * partDuration.toMinutes()` assumes all parts have the same duration as part1,
-                // and `eventPart1.lastPart` is actually the total number of parts in the group if eventPart1 is the first.
-                // This seems to be what was intended.
-                val totalNumberOfPartsInGroup = eventPart1.lastPart // Assuming eventPart1.part == 1 due to previous filter
-                val expectedTotalDurationMinutes = totalNumberOfPartsInGroup * partDuration.toMinutes()
-
-
-                (between.isNegative || // End of group is before start of group (impossible if start/end are consistent)
-                        (ts1.dayOfWeek != ts2.dayOfWeek) || // Group spans multiple days (which this constraint might want to penalize if not intended)
-                        (ts1.monthDay != ts2.monthDay) || // Group spans multiple monthDays
-                        (kotlin.math.abs(between.toMinutes() - expectedTotalDurationMinutes) > 0)) // Total duration of allocated slots not matching expected.
+                // Penalize if the first and last parts are on different days or monthDays.
+                // Duration checks are removed as they were based on flawed uniform duration assumption.
+                // Contiguity is handled by sequentialEventPartsDisconnectedByTimeHardPenalize.
+                (ts1.dayOfWeek != ts2.dayOfWeek) || (ts1.monthDay != ts2.monthDay)
             }
-            .penalize("First and last part disconnected by time for more than 0 min hard penalize", HardMediumSoftScore.ONE_HARD)
+            .penalize("First and last part on different days hard penalize", HardMediumSoftScore.ONE_HARD) // Renamed for clarity
 
     }
 
@@ -679,12 +662,12 @@ class TimeTableConstraintProvider : ConstraintProvider {
             .penalize("Timeslot not in preferred start time of preferredTimeRanges hard penalize", HardMediumSoftScore.ONE_HARD)
     }
 
-    fun notPreferredEndTimeOfTimeRangesHardPenalize(constraintFactory: ConstraintFactory): Constraint {
-        return constraintFactory
-            .forEach(EventPart::class.java)
-            .filter(this::isOutsidePreferredEndTimeRanges)
-            .penalize("Timeslot not in preferred end time of preferredTimeRanges hard penalize", HardMediumSoftScore.ONE_HARD)
-    }
+    // fun notPreferredEndTimeOfTimeRangesHardPenalize(constraintFactory: ConstraintFactory): Constraint {
+    //     return constraintFactory
+    //         .forEach(EventPart::class.java)
+    //         .filter(this::isOutsidePreferredEndTimeRanges)
+    //         .penalize("Timeslot not in preferred end time of preferredTimeRanges hard penalize", HardMediumSoftScore.ONE_HARD)
+    // }
 
     fun notPreferredStartTimeOfTimeRangesMediumPenalize(constraintFactory: ConstraintFactory): Constraint {
         return constraintFactory
@@ -700,19 +683,19 @@ class TimeTableConstraintProvider : ConstraintProvider {
             .penalize("Timeslot not in preferred end time of preferredTimeRanges medium penalize", HardMediumSoftScore.ONE_MEDIUM)
     }
 
-    fun notPreferredStartTimeOfTimeRangesSoftPenalize(constraintFactory: ConstraintFactory): Constraint {
-        return constraintFactory
-            .forEach(EventPart::class.java)
-            .filter(this::isOutsidePreferredStartTimeRanges)
-            .penalize("Timeslot not in preferred start time of preferredTimeRanges soft penalize", HardMediumSoftScore.ONE_SOFT)
-    }
+    // fun notPreferredStartTimeOfTimeRangesSoftPenalize(constraintFactory: ConstraintFactory): Constraint {
+    //     return constraintFactory
+    //         .forEach(EventPart::class.java)
+    //         .filter(this::isOutsidePreferredStartTimeRanges)
+    //         .penalize("Timeslot not in preferred start time of preferredTimeRanges soft penalize", HardMediumSoftScore.ONE_SOFT)
+    // }
 
-    fun notPreferredEndTimeOfTimeRangesSoftPenalize(constraintFactory: ConstraintFactory): Constraint {
-        return constraintFactory
-            .forEach(EventPart::class.java)
-            .filter(this::isOutsidePreferredEndTimeRanges)
-            .penalize("Timeslot not in preferred end time of preferredTimeRanges soft penalize", HardMediumSoftScore.ONE_SOFT)
-    }
+    // fun notPreferredEndTimeOfTimeRangesSoftPenalize(constraintFactory: ConstraintFactory): Constraint {
+    //     return constraintFactory
+    //         .forEach(EventPart::class.java)
+    //         .filter(this::isOutsidePreferredEndTimeRanges)
+    //         .penalize("Timeslot not in preferred end time of preferredTimeRanges soft penalize", HardMediumSoftScore.ONE_SOFT)
+    // }
 
     fun notPreferredScheduleStartTimeRangeMediumPenalize(constraintFactory: ConstraintFactory): Constraint {
         return constraintFactory
@@ -792,39 +775,38 @@ class TimeTableConstraintProvider : ConstraintProvider {
     fun maxWorkloadConflictSoftPenalize(constraintFactory: ConstraintFactory): Constraint {
         return constraintFactory
             .forEach(EventPart::class.java)
-            .filter { eventPart: EventPart -> !eventPart.gap }
-            .filter { eventPart: EventPart -> eventPart.part == 1}
+            .filter { eventPart: EventPart -> !eventPart.gap } // Only consider non-gap event parts for workload
+            .filter { eventPart: EventPart -> eventPart.timeslot != null && eventPart.timeslot?.date != null } // Ensure timeslot and date are assigned
             .groupBy(
-                // Group by monthDay (or another suitable daily grouping) and user.
-                // totalWorkingHours from EventPart is used as a key, implying it should be consistent for the group.
-                // If totalWorkingHours can vary for the same user on the same day, this grouping might be problematic.
-                // Assuming EventPart::totalWorkingHours means "user's total work hours for this day type".
-                { eventPart: EventPart -> eventPart.user }, // Group by User first
-                { eventPart: EventPart -> eventPart.timeslot?.monthDay }, // Then by day
-                { eventPart: EventPart -> eventPart.totalWorkingHours }, // Include user's daily total hours for this day
-                sum { eventPart: EventPart ->
-                    if (eventPart.startDate != null && eventPart.endDate != null) {
-                        Duration.between(eventPart.startDate, eventPart.endDate).toMinutes().toInt()
-                    } else {
-                        0
-                    }
+                EventPart::user, // Group by user
+                { eventPart -> eventPart.timeslot!!.date }, // Then by the specific date of the timeslot
+                sum { eventPart -> // Sum the actual duration of assigned timeslots
+                    Duration.between(eventPart.timeslot!!.startTime, eventPart.timeslot!!.endTime).toMinutes().toInt()
                 }
             )
-            .filter { user: User, _: MonthDay?, dailyTotalWorkingHours: Int, calculatedEventWorkloadMinutes: Int ->
-                if (user.maxWorkLoadPercent == null || user.maxWorkLoadPercent!! <= 0) {
-                    return@filter false // No workload limit defined or it's invalid, so no conflict.
-                }
-                if (dailyTotalWorkingHours <= 0) {
-                    // If user has no working hours defined for the day, any workload is technically infinite percent.
-                    // Or, if calculatedEventWorkloadMinutes is also 0, then it's 0%.
-                    // Let's say if no working hours, any event workload is a conflict.
-                    return@filter calculatedEventWorkloadMinutes > 0
+            .filter { user: User, date: LocalDate, totalScheduledMinutes: Int ->
+                if (user.maxWorkLoadPercent == null || user.maxWorkLoadPercent <= 0) {
+                    return@filter false // No workload limit defined or it's invalid.
                 }
 
-                val calculatedWorkloadPercentage = (calculatedEventWorkloadMinutes.toDouble() * 100) / (dailyTotalWorkingHours * 60)
-                calculatedWorkloadPercentage > user.maxWorkLoadPercent!!
+                val workTimeForDay = user.workTimes.find { wt -> wt.dayOfWeek == date.dayOfWeek }
+                if (workTimeForDay == null) {
+                    // No work time defined for this specific day for the user.
+                    // If there are scheduled minutes, it's effectively 100%+ workload against 0 capacity.
+                    return@filter totalScheduledMinutes > 0
+                }
+
+                val userDailyCapacityMinutes = Duration.between(workTimeForDay.startTime, workTimeForDay.endTime).toMinutes()
+                if (userDailyCapacityMinutes <= 0) {
+                     // User has work time defined but duration is zero or negative, any work is overload.
+                    return@filter totalScheduledMinutes > 0
+                }
+
+                val allowedScheduledMinutes = userDailyCapacityMinutes * (user.maxWorkLoadPercent / 100.0)
+
+                totalScheduledMinutes > allowedScheduledMinutes
             }
-            .penalize("Exceeded max workload soft penalize", HardMediumSoftScore.ONE_SOFT)
+            .penalize("Exceeded max workload soft penalize", HardMediumSoftScore.ONE_SOFT) { _, _, _, _ -> 1 } // Provide a match weighter
     }
 
     fun backToBackMeetingsPreferredMediumReward(constraintFactory: ConstraintFactory): Constraint {

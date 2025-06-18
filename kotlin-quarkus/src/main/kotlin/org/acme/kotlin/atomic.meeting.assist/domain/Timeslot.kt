@@ -7,6 +7,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.util.*
 import javax.persistence.*
+import javax.validation.constraints.NotNull
 import java.time.MonthDay
 
 
@@ -20,13 +21,18 @@ class Timeslot {
     @GeneratedValue
     var id: Long? = null
 
-    var hostId: UUID? = null
+    var hostId: UUID? = null // Nullable, so no @NotNull unless business rule changes
 
+    @field:NotNull(message = "Timeslot dayOfWeek must not be null")
     lateinit var dayOfWeek: DayOfWeek
+    @field:NotNull(message = "Timeslot startTime must not be null")
     lateinit var startTime: LocalTime
+    @field:NotNull(message = "Timeslot endTime must not be null")
     lateinit var endTime: LocalTime
+    @field:NotNull(message = "Timeslot monthDay must not be null")
     @Type(type = "org.acme.kotlin.atomic.meeting.assist.domain.MonthDay")
     lateinit var monthDay: MonthDay
+    @field:NotNull(message = "Timeslot date must not be null")
     lateinit var date: LocalDate
 
     // No-arg constructor required for Hibernate

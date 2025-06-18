@@ -3,7 +3,9 @@ package org.acme.kotlin.atomic.meeting.assist.rest
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.node.NullNode
 import io.quarkus.panache.common.Sort
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.jboss.logging.Logger
 import org.acme.kotlin.atomic.meeting.assist.domain.*
@@ -24,6 +26,11 @@ import java.util.*
 import javax.annotation.security.RolesAllowed
 import javax.inject.Inject
 import javax.transaction.Transactional
+import javax.validation.Valid
+import javax.validation.constraints.Min
+import javax.validation.constraints.NotBlank
+import javax.validation.constraints.NotEmpty
+import javax.validation.constraints.NotNull
 import javax.ws.rs.*
 
 // DTOs for callAPI payload
@@ -104,7 +111,7 @@ data class EventPartDto(
     val isMeeting: Boolean?,
     val dailyTaskList: Boolean?,
     val weeklyTaskList: Boolean?,
-    val gap: Long?,
+    val gap: Boolean?, // Changed from Long? to Boolean?
     val preferredStartTimeRange: String?,
     val preferredEndTimeRange: String?,
     val totalWorkingHours: Int?,
@@ -124,28 +131,53 @@ data class TimeTableSolutionDto(
 
 data class PostTableRequestBody(
     @field:JsonProperty("singletonId")
+    @field:NotNull(message = "singletonId must not be null")
     var singletonId: UUID? = null,
+
     @field:JsonProperty("hostId")
+    @field:NotNull(message = "hostId must not be null")
     var hostId: UUID? = null,
+
     @field:JsonProperty("timeslots")
+    @field:NotEmpty(message = "timeslots must not be empty")
+    @field:Valid // This will trigger validation on each Timeslot object in the list
     var timeslots: MutableList<Timeslot>? = null,
+
     @field:JsonProperty("userList")
+    @field:NotEmpty(message = "userList must not be empty")
+    @field:Valid // This will trigger validation on each User object in the list
     var userList: MutableList<User>? = null,
+
     @field:JsonProperty("eventParts")
+    @field:NotEmpty(message = "eventParts must not be empty")
+    @field:Valid // This will trigger validation on each EventPart object in the list
     var eventParts: MutableList<EventPart>? = null,
+
+    @field:NotBlank(message = "fileKey must not be blank")
     var fileKey: String,
+
+    @field:Min(value = 0, message = "delay must be non-negative")
     val delay: Long,
+
+    @field:NotBlank(message = "callBackUrl must not be blank")
+    // Consider adding @org.hibernate.validator.constraints.URL if available and desired
     val callBackUrl: String,
 )
 
 data class PostStopSingletonRequestBody(
     @field:JsonProperty("singletonId")
+    @field:NotNull(message = "singletonId must not be null")
     var singletonId: UUID? = null,
 )
 
 
 @Path("/timeTable")
 class TimeTableResource {
+
+    // Create a CoroutineScope tied to the lifecycle of this resource.
+    // If TimeTableResource is @ApplicationScoped (default for JAX-RS resources), this scope lasts for the app lifetime.
+    // Use SupervisorJob so failure of one coroutine doesn't cancel others.
+    private val resourceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     companion object {
         private val LOGGER = Logger.getLogger(TimeTableResource::class.java)
@@ -212,10 +244,12 @@ class TimeTableResource {
 
     @Transactional
     protected fun findById(id: UUID, singletonIdFromRequest: UUID, hostIdFromRequest: UUID): TimeTable {
-        check(id == singletonIdFromRequest) { "There is no timeTable with id ($id)." }
-        // Occurs in a single transaction, so each initialized lesson references the same timeslot/room instance
-        // that is contained by the timeTable's timeslotList/roomList.
-        check(hostIdFromRequest != null) { "hostIdFromRequest is null ($hostIdFromRequest)" }
+        if (id != singletonIdFromRequest) {
+            // Or NotFoundException if singletonId is the primary resource key and id is just a parameter for this specific call
+            throw BadRequestException("Path parameter singletonId ($singletonIdFromRequest) does not match the id ($id) used for lookup context.")
+        }
+        // hostIdFromRequest is a UUID from @PathParam, it cannot be null. The previous check was redundant.
+
 //        solverManager.terminateEarly(singletonIdFromRequest)
         val savedTimeslots = timeslotRepository.list("hostId", Sort.by("dayOfWeek").and("startTime").and("endTime").and("id"), hostIdFromRequest)
         LOGGER.debug("savedTimeslots: $savedTimeslots")
@@ -229,70 +263,62 @@ class TimeTableResource {
         )
     }
 
-    @Transactional
-    fun callAPI(callBackUrl: String, fileKey: String, hostId: UUID) {
-        val client = OkHttp()
-        val clientHandler: HttpHandler = ClientFilters.BasicAuth(username, password).then(client)
-
-        // Efficiently fetch data
-        val timeslotsForHost = timeslotRepository.list("hostId", Sort.by("dayOfWeek").and("startTime").and("endTime").and("id"), hostId)
-        val usersForHost = userRepository.list("hostId", hostId) // Assuming WorkTimes are fetched as needed (e.g. eager)
-        val eventPartsForHost = eventPartRepository.list("hostId", Sort.by("startDate").and("endDate").and("id"), hostId)
-
-        // Populate DTOs
-        val timeslotDtos = timeslotsForHost.map { ts ->
+    private fun mapTimeslotsToDto(timeslots: List<Timeslot>): List<TimeslotDto> {
+        return timeslots.map { ts ->
             TimeslotDto(ts.id, ts.hostId?.toString(), ts.dayOfWeek?.toString(), ts.startTime?.toString(), ts.endTime?.toString(), ts.monthDay?.toString())
         }
+    }
 
-        val userDtos = usersForHost.map { u ->
-            val workTimeDtos = u.workTimes.map { wt ->
+    private fun mapUsersToDto(users: List<User>): List<UserDto> {
+        return users.map { u ->
+            val workTimeDtos = u.workTimes.map { wt -> // Accessing u.workTimes will trigger lazy load if session is active
                 WorkTimeDto(wt.id, wt.userId?.toString(), wt.hostId?.toString(), wt.startTime?.toString(), wt.endTime?.toString())
             }
             UserDto(u.id?.toString(), u.hostId?.toString(), u.maxWorkLoadPercent, u.backToBackMeetings, u.maxNumberOfMeetings, workTimeDtos)
         }
+    }
 
-        // Fetch related Events and their PreferredTimeRanges efficiently
-        val eventIds = eventPartsForHost.mapNotNull { it.eventId }.distinct()
-        val eventsForHost = if (eventIds.isNotEmpty()) eventRepository.list("id in ?1", eventIds).associateBy { it.id } else emptyMap()
+    private fun mapEventPartsToDto(
+        eventParts: List<EventPart>,
+        userDtos: List<UserDto>,
+        eventsMap: Map<String, Event>, // Pass String ID for Event
+        allTimeslotsForHost: List<Timeslot> // Pass all timeslots for host to find matches
+    ): List<EventPartDto> {
+        return eventParts.map { ep ->
+            val userDto = userDtos.find { it.id == ep.userId?.toString() }
+            val eventDomain = eventsMap[ep.eventId] // ep.eventId is String
 
-        val preferredTimeRangeIds = eventsForHost.values.flatMap { it.preferredTimeRanges?.mapNotNull { ptr -> ptr.id } ?: emptyList() }.distinct()
-        // Assuming PreferredTimeRanges are either eagerly fetched with Events or fetched here if needed.
-        // For simplicity, let's assume they are part of the Event objects.
-
-        val eventPartDtos = eventPartsForHost.map { ep ->
-            val userDto = userDtos.find { it.id == ep.userId?.toString() } // Find already mapped UserDto
-            val event = eventsForHost[ep.eventId]
-            val preferredTimeRangeDtos = event?.preferredTimeRanges?.map { ptr ->
+            val preferredTimeRangeDtos = eventDomain?.preferredTimeRanges?.map { ptr -> // Accessing eventDomain.preferredTimeRanges will trigger lazy load
                 PreferredTimeRangeDto(ptr.id, ptr.eventId, ptr.userId?.toString(), ptr.hostId?.toString(), ptr.dayOfWeek?.toString(), ptr.startTime?.toString(), ptr.endTime?.toString())
             }
-            val eventDto = event?.let { e ->
+            val eventDto = eventDomain?.let { e ->
                 EventDto(e.id, e.userId?.toString(), e.hostId?.toString(), preferredTimeRangeDtos)
             }
-            val timeslotDto = ep.timeslot?.let { ts -> // ep.timeslot might be null
-                 timeslotsForHost.find { it.id == ts.id }?.let { // find matching from already fetched timeslots
-                     TimeslotDto(it.id, it.hostId?.toString(), it.dayOfWeek?.toString(), it.startTime?.toString(), it.endTime?.toString(), it.monthDay?.toString())
-                 }
+            val timeslotDto = ep.timeslot?.let { ts ->
+                allTimeslotsForHost.find { it.id == ts.id }?.let {
+                    TimeslotDto(it.id, it.hostId?.toString(), it.dayOfWeek?.toString(), it.startTime?.toString(), it.endTime?.toString(), it.monthDay?.toString())
+                }
             }
 
             EventPartDto(
-                id = ep.id?.toString(),
-                groupId = ep.groupId,
-                eventId = ep.eventId,
+                id = ep.id?.toString(), // EventPart.id is Long, DTO id is String?
+                groupId = UUID.fromString(ep.groupId), // EventPart.groupId is String, DTO groupId is UUID?
+                eventId = UUID.fromString(ep.eventId),
                 part = ep.part,
-                lastPart = ep.lastPart,
+                lastPart = ep.part == ep.lastPart, // Corrected: lastPart on EventPart is Int (total parts)
                 startDate = ep.startDate,
                 endDate = ep.endDate,
-                taskId = ep.taskId,
+                taskId = ep.taskId?.let { UUID.fromString(it) },
                 softDeadline = ep.softDeadline,
                 hardDeadline = ep.hardDeadline,
-                meetingId = ep.meetingId,
+                meetingId = ep.meetingId?.let { UUID.fromString(it) },
                 userId = ep.userId?.toString(),
                 hostId = ep.hostId?.toString(),
                 user = userDto,
                 priority = ep.priority,
                 isPreEvent = ep.isPreEvent,
                 isPostEvent = ep.isPostEvent,
-                forEventId = ep.forEventId,
+                forEventId = ep.forEventId?.let { UUID.fromString(it) },
                 positiveImpactScore = ep.positiveImpactScore,
                 negativeImpactScore = ep.negativeImpactScore,
                 positiveImpactDayOfWeek = ep.positiveImpactDayOfWeek?.toString(),
@@ -308,16 +334,37 @@ class TimeTableResource {
                 isMeeting = ep.isMeeting,
                 dailyTaskList = ep.dailyTaskList,
                 weeklyTaskList = ep.weeklyTaskList,
-                gap = ep.gap,
+                gap = if(ep.gap) ep.gap else null, // EventPart.gap is Boolean, DTO gap is Long? - Mismatch! Changed DTO to Boolean?
                 preferredStartTimeRange = ep.preferredStartTimeRange?.toString(),
                 preferredEndTimeRange = ep.preferredEndTimeRange?.toString(),
-                totalWorkingHours = ep.totalWorkingHours,
+                totalWorkingHours = ep.totalWorkingHours, // EventPart.totalWorkingHours is Int, DTO is Int?
                 event = eventDto,
                 timeslot = timeslotDto
             )
         }
+    }
 
-        // Calculate score (similar to how it was done before, if TimeTable instance is needed)
+
+    @Transactional
+    fun callAPI(callBackUrl: String, fileKey: String, hostId: UUID) {
+        val client = OkHttp()
+        val clientHandler: HttpHandler = ClientFilters.BasicAuth(username, password).then(client)
+
+        // Efficiently fetch data
+        val timeslotsForHost = timeslotRepository.list("hostId", Sort.by("dayOfWeek").and("startTime").and("endTime").and("id"), hostId)
+        val usersForHost = userRepository.list("hostId", hostId)
+        val eventPartsForHost = eventPartRepository.list("hostId", Sort.by("startDate").and("endDate").and("id"), hostId)
+
+        // Pre-fetch Events for all eventPartsForHost to optimize
+        val eventIds = eventPartsForHost.mapNotNull { it.eventId }.distinct()
+        val eventsMap = if (eventIds.isNotEmpty()) eventRepository.list("id in ?1", eventIds).associateBy { it.id } else emptyMap()
+
+        // Populate DTOs using helper methods
+        val timeslotDtos = mapTimeslotsToDto(timeslotsForHost)
+        val userDtos = mapUsersToDto(usersForHost) // This will trigger lazy load of workTimes within transaction
+        val eventPartDtos = mapEventPartsToDto(eventPartsForHost, userDtos, eventsMap, timeslotsForHost) // This will trigger lazy load of preferredTimeRanges within transaction
+
+        // Calculate score
         // For simplicity, let's assume score calculation might need the original domain objects,
         // or it's passed/calculated differently. Here, we'll pass null if not easily available.
         // This part might need adjustment based on how score is obtained.
@@ -385,7 +432,7 @@ class TimeTableResource {
             { findById(it, singletonId, hostId) }, // Pass singletonId and hostId to findById
             this::save)
 
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+        resourceScope.launch { // Changed to use resourceScope
             callBackAPI(singletonId, hostId, fileKey, delay, callBackUrl)
         }
 
@@ -485,7 +532,7 @@ class TimeTableResource {
     }
 
 
-    private fun processSolveRequest(args: PostTableRequestBody, isAdmin: Boolean) {
+    private fun processSolveRequest(@Valid args: PostTableRequestBody, isAdmin: Boolean) { // Added @Valid here
         val action = if (isAdmin) "adminSolveDay" else "solveDay"
         LOGGER.info("Received $action request: $args")
 
@@ -520,14 +567,14 @@ class TimeTableResource {
 
     @POST
     @Path("/user/solve-day")
-    fun solveDay(args: PostTableRequestBody) {
+    fun solveDay(@Valid args: PostTableRequestBody) { // Added @Valid here
         processSolveRequest(args, false)
     }
 
     @POST
     @Path("/admin/solve-day")
     @RolesAllowed("admin")
-    fun adminSolveDay(args: PostTableRequestBody) {
+    fun adminSolveDay(@Valid args: PostTableRequestBody) { // Added @Valid here
         processSolveRequest(args, true)
     }
 

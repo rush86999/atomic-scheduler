@@ -9,6 +9,10 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.*
 import javax.persistence.*
+import javax.validation.Valid
+import javax.validation.constraints.Min
+import javax.validation.constraints.NotBlank
+import javax.validation.constraints.NotNull
 
 @PlanningEntity
 @Entity
@@ -24,26 +28,41 @@ class EventPart {
     @GeneratedValue
     var id: Long? = null
 
+    @field:NotBlank(message = "EventPart groupId must not be blank")
     lateinit var groupId: String
+    @field:NotBlank(message = "EventPart eventId must not be blank")
     lateinit var eventId: String
+
+    @field:Min(value = 1, message = "part number must be at least 1")
     var part: Int = 1
+    @field:Min(value = 1, message = "lastPart number must be at least 1")
     var lastPart: Int = 1
-    var meetingPart: Int = -1
-    var meetingLastPart: Int = -1
-    lateinit var startDate: LocalDateTime
-    lateinit var endDate: LocalDateTime
+    // meetingPart, meetingLastPart can be -1, so no Min(1)
+
+    @field:NotNull(message = "EventPart startDate must not be null")
+    lateinit var startDate: LocalDateTime // Parsed from String in constructor, validation of String format can be done at DTO level if it comes as String
+    @field:NotNull(message = "EventPart endDate must not be null")
+    lateinit var endDate: LocalDateTime   // Similar to startDate
 
     var taskId: String? = null
+    // softDeadline and hardDeadline are LocalDateTime?, validated if present (e.g. @Future if they must be in future)
+    // No specific annotations here unless there are universal rules for them.
     var softDeadline: LocalDateTime? = null
     var hardDeadline: LocalDateTime? = null
+
+    @field:NotNull(message = "EventPart userId must not be null")
     lateinit var userId: UUID
+    @field:NotNull(message = "EventPart hostId must not be null")
     lateinit var hostId: UUID
     var meetingId: String? = null
+
     @ManyToOne
     @JoinColumn(name = "userId", referencedColumnName = "id", insertable = false, updatable = false)
+    @field:NotNull(message = "EventPart user object must not be null")
+    @field:Valid // Validate the User object
     lateinit var user: User
 
-    var priority: Int = 1
+    @field:Min(value = 1, message = "priority must be at least 1")
     var isPreEvent: Boolean = false
     var isPostEvent: Boolean = false
     var forEventId: String? = null
@@ -65,10 +84,12 @@ class EventPart {
     var gap: Boolean = false
     var preferredStartTimeRange: LocalTime? = null
     var preferredEndTimeRange: LocalTime? = null
-    var totalWorkingHours: Int = 8
+    var totalWorkingHours: Int = 8 // Consider @Min(0) if applicable
 
     @ManyToOne
     @JoinColumn(name = "eventId", referencedColumnName = "id", insertable = false, updatable = false)
+    @field:NotNull(message = "EventPart event object must not be null")
+    @field:Valid // Validate the Event object
     lateinit var event: Event
 
     @PlanningVariable(valueRangeProviderRefs = ["timeslotRange"])
