@@ -113,11 +113,11 @@ class DemoDataGenerator {
         for (day in days) {
             for (i in startTimes.indices) {
                 timeslotList.add(Timeslot(
-                    dayOfWeek = day,
-                    startTime = startTimes[i],
-                    endTime = endTimes[i],
-                    monthDay = MonthDay.now(), // Provide MonthDay
-                    hostId = DEMO_HOST_ID as UUID? // Explicitly cast to UUID?
+                    day, // Positional argument for dayOfWeek
+                    startTimes[i], // Positional argument for startTime
+                    endTimes[i], // Positional argument for endTime
+                    MonthDay.now(), // Positional argument for monthDay
+                    DEMO_HOST_ID // Positional argument for hostId
                 ))
             }
         }
@@ -149,7 +149,7 @@ class DemoDataGenerator {
         for (user in users) {
             for (day in workDays) {
                 workTimes.add(WorkTime(
-                    userId = user.id!!, hostId = DEMO_HOST_ID, dayOfWeek = day,
+                    userId = user.id, hostId = DEMO_HOST_ID, dayOfWeek = day, // Removed !! from user.id
                     startTime = LocalTime.of(9, 0), endTime = LocalTime.of(17, 0)
                 ))
             }
@@ -168,7 +168,7 @@ class DemoDataGenerator {
             val user3WorkTimes = mutableListOf<WorkTime>()
             for (day in workDays) {
                 user3WorkTimes.add(WorkTime(
-                    userId = user3.id!!, hostId = DEMO_HOST_ID, dayOfWeek = day,
+                    userId = user3.id, hostId = DEMO_HOST_ID, dayOfWeek = day, // Removed !! from user3.id
                     startTime = LocalTime.of(8, 0), endTime = LocalTime.of(18, 0)
                 ))
             }
@@ -190,7 +190,7 @@ class DemoDataGenerator {
         if (user1 != null) {
             val event1IdUUID = UUID.randomUUID()
             val event1IdString = event1IdUUID.toString()
-            val event1 = Event(id = event1IdString, name = "Project Alpha Meeting", preferredTimeRanges = mutableListOf(), userId = user1.id!!, hostId = DEMO_HOST_ID)
+            val event1 = Event(id = event1IdString, name = "Project Alpha Meeting", preferredTimeRanges = mutableListOf(), userId = user1.id, hostId = DEMO_HOST_ID) // Removed !!
             events.add(event1)
 
             eventParts.add(EventPart(
@@ -202,7 +202,7 @@ class DemoDataGenerator {
                 taskId = null,
                 softDeadline = null,
                 hardDeadline = null,
-                userId = user1.id!!,
+                userId = user1.id, // Removed !!
                 user = user1,
                 priority = 1,
                 isPreEvent = false,
@@ -235,7 +235,7 @@ class DemoDataGenerator {
                 meetingLastPart = 2
             ))
             eventParts.add(EventPart(
-                groupId = event1IdString, // Removed id = null
+                groupId = event1IdString,
                 part = 2,
                 lastPart = 2,
                 startDate = now.plusDays(1).withHour(10).withMinute(30).toString(),
@@ -243,7 +243,7 @@ class DemoDataGenerator {
                 taskId = null,
                 softDeadline = null,
                 hardDeadline = null,
-                userId = user1.id!!,
+                userId = user1.id, // Removed !!
                 user = user1,
                 priority = 1,
                 isPreEvent = false,
@@ -276,7 +276,7 @@ class DemoDataGenerator {
                 meetingLastPart = 2
             ))
             preferredRanges.add(PreferredTimeRange(
-                eventId = event1IdString, userId = user1.id!!, hostId = DEMO_HOST_ID,
+                eventId = event1IdString, userId = user1.id, hostId = DEMO_HOST_ID, // Removed !!
                 dayOfWeek = DayOfWeek.MONDAY, startTime = LocalTime.of(10,0), endTime = LocalTime.of(12,0)
             ))
         }
@@ -286,10 +286,10 @@ class DemoDataGenerator {
         if (user2 != null) {
             val event2IdUUID = UUID.randomUUID()
             val event2IdString = event2IdUUID.toString()
-            val event2 = Event(id = event2IdString, name = "Focus Work - Report", preferredTimeRanges = mutableListOf(), userId = user2.id!!, hostId = DEMO_HOST_ID)
+            val event2 = Event(id = event2IdString, name = "Focus Work - Report", preferredTimeRanges = mutableListOf(), userId = user2.id, hostId = DEMO_HOST_ID) // Removed !!
             events.add(event2)
             eventParts.add(EventPart(
-                groupId = event2IdString, // Removed id = null
+                groupId = event2IdString,
                 part = 1,
                 lastPart = 1,
                 startDate = now.plusDays(2).withHour(14).withMinute(0).toString(),
@@ -297,7 +297,7 @@ class DemoDataGenerator {
                 taskId = null,
                 softDeadline = null,
                 hardDeadline = null,
-                userId = user2.id!!,
+                userId = user2.id, // Removed !!
                 user = user2,
                 priority = 2,
                 isPreEvent = false,
@@ -337,14 +337,14 @@ class DemoDataGenerator {
             if (user1 != null) {
                 val event3IdUUID = UUID.randomUUID()
                 val event3IdString = event3IdUUID.toString()
-                val event3 = Event(id = event3IdString, name = "Prepare Presentation", preferredTimeRanges = mutableListOf(), userId = user1.id!!, hostId = DEMO_HOST_ID)
+                val event3 = Event(id = event3IdString, name = "Prepare Presentation", preferredTimeRanges = mutableListOf(), userId = user1.id, hostId = DEMO_HOST_ID) // Removed !!
                 events.add(event3)
                 eventParts.add(EventPart(
                     groupId = event3IdString, eventId = event3IdString, part = 1, lastPart = 1,
                     startDate = now.plusDays(3).withHour(9).withMinute(0).toString(),
                     endDate = now.plusDays(3).withHour(11).withMinute(0).toString(),
                     taskId = null, softDeadline = null, hardDeadline = null,
-                    userId = user1.id!!, user = user1, priority = 3,
+                    userId = user1.id, user = user1, priority = 3, // Removed !!
                     isPreEvent = false, isPostEvent = false, forEventId = null,
                     positiveImpactScore = 0, negativeImpactScore = 0, positiveImpactDayOfWeek = null, positiveImpactTime = null, negativeImpactDayOfWeek = null, negativeImpactTime = null,
                     modifiable = true, preferredDayOfWeek = null, preferredTime = null,
@@ -358,14 +358,14 @@ class DemoDataGenerator {
             if (user2 != null) {
                 val event4IdUUID = UUID.randomUUID()
                 val event4IdString = event4IdUUID.toString()
-                val event4 = Event(id = event4IdString, name = "Team Sync", preferredTimeRanges = mutableListOf(), userId = user2.id!!, hostId = DEMO_HOST_ID)
+                val event4 = Event(id = event4IdString, name = "Team Sync", preferredTimeRanges = mutableListOf(), userId = user2.id, hostId = DEMO_HOST_ID) // Removed !!
                 events.add(event4)
                 eventParts.add(EventPart(
                     groupId = event4IdString, eventId = event4IdString, part = 1, lastPart = 3,
                     startDate = now.plusDays(1).withHour(15).withMinute(0).toString(),
                     endDate = now.plusDays(1).withHour(15).withMinute(20).toString(),
                     taskId = null, softDeadline = null, hardDeadline = null,
-                    userId = user2.id!!, user = user2, priority = 1,
+                    userId = user2.id, user = user2, priority = 1, // Removed !!
                     isPreEvent = false, isPostEvent = false, forEventId = null,
                     positiveImpactScore = 0, negativeImpactScore = 0, positiveImpactDayOfWeek = null, positiveImpactTime = null, negativeImpactDayOfWeek = null, negativeImpactTime = null,
                     modifiable = true, preferredDayOfWeek = null, preferredTime = null,
@@ -378,7 +378,7 @@ class DemoDataGenerator {
                     startDate = now.plusDays(1).withHour(15).withMinute(20).toString(),
                     endDate = now.plusDays(1).withHour(15).withMinute(40).toString(),
                     taskId = null, softDeadline = null, hardDeadline = null,
-                    userId = user2.id!!, user = user2, priority = 1,
+                    userId = user2.id, user = user2, priority = 1, // Removed !!
                     isPreEvent = false, isPostEvent = false, forEventId = null,
                     positiveImpactScore = 0, negativeImpactScore = 0, positiveImpactDayOfWeek = null, positiveImpactTime = null, negativeImpactDayOfWeek = null, negativeImpactTime = null,
                     modifiable = true, preferredDayOfWeek = null, preferredTime = null,
@@ -391,7 +391,7 @@ class DemoDataGenerator {
                     startDate = now.plusDays(1).withHour(15).withMinute(40).toString(),
                     endDate = now.plusDays(1).withHour(16).withMinute(0).toString(),
                     taskId = null, softDeadline = null, hardDeadline = null,
-                    userId = user2.id!!, user = user2, priority = 1,
+                    userId = user2.id, user = user2, priority = 1, // Removed !!
                     isPreEvent = false, isPostEvent = false, forEventId = null,
                     positiveImpactScore = 0, negativeImpactScore = 0, positiveImpactDayOfWeek = null, positiveImpactTime = null, negativeImpactDayOfWeek = null, negativeImpactTime = null,
                     modifiable = true, preferredDayOfWeek = null, preferredTime = null,
@@ -406,14 +406,14 @@ class DemoDataGenerator {
             if (user3 != null) {
                  val event5IdUUID = UUID.randomUUID()
                  val event5IdString = event5IdUUID.toString()
-                 val event5 = Event(id = event5IdString, name = "Client Call", preferredTimeRanges = mutableListOf(), userId = user3.id!!, hostId = DEMO_HOST_ID)
+                 val event5 = Event(id = event5IdString, name = "Client Call", preferredTimeRanges = mutableListOf(), userId = user3.id, hostId = DEMO_HOST_ID) // Removed !!
                  events.add(event5)
                  eventParts.add(EventPart(
                     groupId = event5IdString, eventId = event5IdString, part = 1, lastPart = 1,
                     startDate = now.plusDays(2).withHour(11).withMinute(0).toString(),
                     endDate = now.plusDays(2).withHour(12).withMinute(0).toString(),
                     taskId = null, softDeadline = null, hardDeadline = null,
-                    userId = user3.id!!, user = user3, priority = 1,
+                    userId = user3.id, user = user3, priority = 1, // Removed !!
                     isPreEvent = false, isPostEvent = false, forEventId = null,
                     positiveImpactScore = 0, negativeImpactScore = 0, positiveImpactDayOfWeek = null, positiveImpactTime = null, negativeImpactDayOfWeek = null, negativeImpactTime = null,
                     modifiable = false, preferredDayOfWeek = null, preferredTime = null,
@@ -422,7 +422,7 @@ class DemoDataGenerator {
                     event = event5, hostId = DEMO_HOST_ID, meetingId = null, meetingPart = 1, meetingLastPart = 1
                  ))
                  preferredRanges.add(PreferredTimeRange(
-                    eventId = event5IdString, userId = user3.id!!, hostId = DEMO_HOST_ID, // id is auto-generated for PreferredTimeRange
+                    eventId = event5IdString, userId = user3.id, hostId = DEMO_HOST_ID, // Removed !!
                     dayOfWeek = DayOfWeek.WEDNESDAY, startTime = LocalTime.of(10,0), endTime = LocalTime.of(12,0)
                 ))
             }
