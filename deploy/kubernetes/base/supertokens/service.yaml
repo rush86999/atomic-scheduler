@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: supertokens-service
+  namespace: supertokens
+  labels:
+    app: supertokens-core
+spec:
+  type: ClusterIP
+  selector:
+    app: supertokens-core # Selects the Supertokens pods
+  ports:
+    - name: http
+      protocol: TCP
+      port: 3567 # Port the service will listen on
+      targetPort: http # Name of the port in the Deployment's podSpec (containerPort 3567)

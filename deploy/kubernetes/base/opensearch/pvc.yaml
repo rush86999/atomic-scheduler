@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opensearch-data-pvc
+  namespace: opensearch
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi # Defaulting to 10Gi, can be adjusted
+  # storageClassName: "" # Optional: specify a storage class if needed

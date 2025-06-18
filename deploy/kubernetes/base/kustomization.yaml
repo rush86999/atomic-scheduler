@@ -1,0 +1,46 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# This root kustomization file includes all the base services.
+# Each service subdirectory has its own kustomization.yaml,
+# defining resources and typically its own namespace.
+
+resources:
+  # Data Stores & Message Queues
+  - ./postgres
+  - ./minio
+  - ./kafka # Includes Zookeeper and Kafka Broker
+  - ./opensearch
+
+  # Authentication & Authorization
+  - ./supertokens
+  - ./oauth # Handles OAuth flows
+
+  # Backend Services / Core Logic
+  - ./hasura # GraphQL Engine
+  - ./functions # Serverless functions / Microservices
+  - ./optaplanner # Scheduling service
+
+  # Frontend / Edge Services
+  - ./app # Main frontend application
+  - ./handshake # Handshake Next.js application
+
+# Common labels and annotations can be defined here to apply to all resources
+# across all included kustomizations if desired, but it's often cleaner
+# to manage them within each component's kustomization or via overlays.
+#
+# commonLabels:
+#   environment: base
+#   project: atomic-stack
+#
+# commonAnnotations:
+#   managed-by: kustomize
+
+# Note: If a 'traefik' directory with its own kustomization.yaml exists
+# or is added later, it should be added to the resources list here:
+# - ./traefik
+
+# Similarly, if a common namespace is desired for all these base resources
+# (instead of each service having its own), it could be specified here.
+# However, the current setup gives each service its own namespace for modularity.
+# namespace: default-stack # Example if a common namespace was used.

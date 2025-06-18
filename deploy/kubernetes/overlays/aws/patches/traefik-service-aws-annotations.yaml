@@ -1,0 +1,71 @@
+# deploy/kubernetes/overlays/aws/patches/traefik-service-aws-annotations.yaml
+# This patch adds AWS Load Balancer specific annotations to the Traefik service.
+# It assumes the base Traefik service is named 'traefik' and is in the 'traefik-ingress' namespace.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+  namespace: traefik-ingress # Common namespace for Traefik, adjust if different in your base
+  annotations:
+    # --- AWS Load Balancer Controller Annotations ---
+
+    # Specify the type of load balancer (NLB for performance, ALB for L7 features if preferred, though NLB is common for ingress controllers)
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+    # Specify the scheme of the load balancer (internet-facing or internal)
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+    # Enable cross-zone load balancing for distributing traffic evenly across all registered instances in all Availability Zones
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+    # --- Health Check Configuration for the NLB Target Group ---
+    # Protocol for health checks (TCP, HTTP, HTTPS)
+    # For Traefik, a simple TCP check on the entrypoint port is often sufficient if Traefik itself handles more detailed health internally.
+    # If Traefik has a specific health check endpoint for the LB (e.g., /ping or /healthz on the admin API), HTTP/HTTPS could be used.
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "tcp"
+
+    # Port for health checks. "traffic-port" uses the port of the target group.
+    # This typically means it checks the NodePort that the NLB targets, which forwards to Traefik's service port (e.g., 80 or 443).
+    # If Traefik's web or websecure entrypoints are directly exposed by the service, this will check them.
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "traffic-port"
+    # Alternatively, specify a fixed port if needed, e.g., the 'web' entrypoint port for Traefik (usually 80)
+    # service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "80"
+
+    # --- Optional: SSL/TLS Termination at the NLB using ACM ---
+    # If you want to terminate TLS at the NLB using an AWS Certificate Manager (ACM) certificate.
+    # Traefik can also handle Let's Encrypt or custom certs internally. This is an alternative.
+    #
+    # 1. Specify the ARN of the ACM certificate:
+    # service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "arn:aws:acm:YOUR_AWS_REGION:YOUR_ACCOUNT_ID:certificate/YOUR_CERTIFICATE_ID"
+    #
+    # 2. Specify which service ports should use SSL/TLS (e.g., the port named 'websecure' or port 443).
+    #    The port name must match one of the ports defined in the Service spec.
+    # service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "websecure" # Or "443" if the port is directly numbered
+    #
+    # 3. Optional: Define the SSL policy for the listener (e.g., for security compliance)
+    # service.beta.kubernetes.io/aws-load-balancer-ssl-policy: "ELBSecurityPolicy-TLS-1-2-Ext-2018-06"
+
+    # --- Optional: Access Logs for NLB ---
+    # service.beta.kubernetes.io/aws-load-balancer-access-log-enabled: "true"
+    # service.beta.kubernetes.io/aws-load-balancer-access-log-s3-bucket-name: "your-s3-bucket-for-nlb-logs"
+    # service.beta.kubernetes.io/aws-load-balancer-access-log-s3-bucket-prefix: "nlb-access-logs/traefik"
+
+    # --- Optional: Proxy Protocol v2 ---
+    # If Traefik is configured to accept Proxy Protocol v2 to get original client IP information.
+    # service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*" # Enables for all target groups
+
+    # --- Optional: Subnets ---
+    # By default, the AWS Load Balancer Controller discovers subnets tagged appropriately.
+    # You can explicitly specify subnet IDs if needed (e.g., for specific public subnets).
+    # service.beta.kubernetes.io/aws-load-balancer-subnets: "subnet-xxxxxxxxxxxxxxxxx, subnet-yyyyyyyyyyyyyyyyy"
+
+    # --- Optional: Security Groups (for ALB, not typically used directly for NLB service type in this way) ---
+    # NLBs use target group security settings rather than attaching SGs directly to the NLB.
+    # However, you might control traffic to nodes via SGs.
+    # service.beta.kubernetes.io/aws-load-balancer-security-groups: "sg-xxxxxxxxxxxxxxxxx"
+
+    # Note: Ensure the AWS Load Balancer Controller is installed in your EKS cluster
+    # and has the necessary IAM permissions to manage LoadBalancers.
+    # The specific annotations available and their behavior can depend on the version
+    # of the AWS Load Balancer Controller. Always refer to its official documentation.

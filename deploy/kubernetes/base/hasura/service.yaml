@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hasura-service
+  namespace: hasura
+  labels:
+    app: hasura-graphql-engine
+spec:
+  type: ClusterIP
+  selector:
+    app: hasura-graphql-engine # Selects the Hasura pods
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080 # Port the service will listen on
+      targetPort: http # Name of the port in the Deployment's podSpec (containerPort 8080)

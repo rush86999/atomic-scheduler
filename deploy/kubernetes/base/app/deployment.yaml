@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: app
+  labels:
+    app: app
+spec:
+  replicas: 1 # Start with 1, can be scaled for a frontend application
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+        - name: app
+          image: "${PROJECT_NAME}-atomic-app:latest" # Placeholder - replace with actual image URL
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000 # Matches PORT in ConfigMap
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: app-secret
+            - configMapRef:
+                name: app-configmap
+          # Environment variables from Dockerfile ARGs that are in secrets:
+          # These need to be explicitly mapped if their names in the secret are different
+          # from what the application expects, or if they are not covered by NEXT_PUBLIC_ prefixes.
+          # The Dockerfile ARGs for 'app' were:
+          # HASURA_GRAPHQL_ADMIN_SECRET, GOOGLE_CLIENT_ID_ATOMIC_WEB, GOOGLE_CLIENT_SECRET_ATOMIC_WEB, ZOOM_IV_FOR_PASS, ZOOM_PASS_KEY.
+          # These are in app-secret. If the application expects these exact env var names at runtime:
+          env:
+            - name: HASURA_GRAPHQL_ADMIN_SECRET # If runtime needs it directly
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: HASURA_GRAPHQL_ADMIN_SECRET
+            - name: GOOGLE_CLIENT_ID_ATOMIC_WEB # If runtime needs it directly
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: GOOGLE_CLIENT_ID_ATOMIC_WEB
+            - name: GOOGLE_CLIENT_SECRET_ATOMIC_WEB # If runtime needs it directly
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: GOOGLE_CLIENT_SECRET_ATOMIC_WEB
+            - name: ZOOM_IV_FOR_PASS # If runtime needs it directly
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: ZOOM_IV_FOR_PASS
+            - name: ZOOM_PASS_KEY # If runtime needs it directly
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: ZOOM_PASS_KEY
+            # Note: NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB is in the configmap.
+            # If this should be the same as GOOGLE_CLIENT_ID_ATOMIC_WEB from the secret,
+            # then that NEXT_PUBLIC_ variable in configmap should rather be set here from the secret.
+            # Example:
+            # - name: NEXT_PUBLIC_GOOGLE_CLIENT_ID_ATOMIC_WEB
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: app-secret
+            #       key: GOOGLE_CLIENT_ID_ATOMIC_WEB
+            # For now, assuming the NEXT_PUBLIC_ one in configmap is separate or correctly sourced during build.
+
+
+          # Probes: Next.js apps in standalone mode usually serve on '/'.
+          # If a specific health check endpoint is available (e.g., /api/health), use that.
+          readinessProbe:
+            httpGet:
+              path: / # Check root path, or a specific health endpoint
+              port: http # Port 3000
+            initialDelaySeconds: 10 # Allow time for Next.js server to start
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

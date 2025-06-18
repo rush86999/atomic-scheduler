@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: handshake-configmap
+  namespace: handshake
+data:
+  # Hasura GraphQL URL
+  HASURA_GRAPHQL_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080/v1/graphql"
+
+  # Meeting Assist Admin URL (pointing to the 'functions' service)
+  # The exact path "/schedule-assist/" needs to be confirmed based on functions service's actual API routes.
+  MEETING_ASSIST_ADMIN_URL: "http://functions-service.functions.svc.cluster.local:3000/schedule-assist/" # Placeholder path, adjust as needed
+
+  # Public URL for the handshake API itself, potentially exposed via an Ingress
+  # This is often used by frontend clients. The ${HOST_NAME} would be replaced by actual domain.
+  # The path "/v1/functions/handshake-api/" suggests it might be a specific route on an API gateway or the functions service itself.
+  # If this handshake service *is* the API, then it would be its own external URL.
+  # Given it's a Next.js app, it might serve its own API routes.
+  # Let's assume this handshake service exposes an API at its root or a specific path.
+  # If NEXT_PUBLIC_ATOMIC_HANDSHAKE_API refers to *this* service's external URL:
+  NEXT_PUBLIC_ATOMIC_HANDSHAKE_API: "https://${HOST_NAME}/api/handshake" # Example path on this service, adjust if needed
+
+  # Default port for Next.js standalone server.js
+  PORT: "3000"
+
+  # Node environment
+  NODE_ENV: "production"
+
+  # Any other non-sensitive environment variables required by the handshake service
+  # For example, if it needs to know its own public URL for generating links (can be same as NEXT_PUBLIC_ATOMIC_HANDSHAKE_API or different)
+  # APP_URL: "https://${HOST_NAME}" # General application URL
+  LOG_LEVEL: "info"

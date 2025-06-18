@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: handshake
+  namespace: handshake
+  labels:
+    app: handshake
+spec:
+  replicas: 1 # Can be scaled as Next.js standalone apps are typically stateless
+  selector:
+    matchLabels:
+      app: handshake
+  template:
+    metadata:
+      labels:
+        app: handshake
+    spec:
+      containers:
+        - name: handshake
+          image: "${PROJECT_NAME}-atomic-handshake:latest" # Placeholder - replace with actual image URL
+          imagePullPolicy: IfNotPresent # Or Always if using 'latest' tag frequently
+          ports:
+            - name: http
+              containerPort: 3000 # Matches PORT in ConfigMap
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: handshake-secret
+            - configMapRef:
+                name: handshake-configmap
+          # Ensure the application uses the PORT environment variable from the ConfigMap
+          # if it's not defaulting to 3000 via its Dockerfile's EXPOSE or CMD.
+          # The Next.js standalone server typically listens on the port specified by the PORT env var.
+
+          # Probes: Next.js apps in standalone mode usually serve on '/'.
+          # If a specific health check endpoint is available (e.g., /api/health), use that.
+          readinessProbe:
+            httpGet:
+              path: / # Check root path, or a specific health endpoint like /api/health
+              port: http # Port 3000
+            initialDelaySeconds: 10 # Allow time for Next.js server to start
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

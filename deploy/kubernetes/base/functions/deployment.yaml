@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: functions
+  namespace: functions
+  labels:
+    app: functions
+spec:
+  replicas: 1 # Start with 1, can be scaled
+  selector:
+    matchLabels:
+      app: functions
+  template:
+    metadata:
+      labels:
+        app: functions
+    spec:
+      containers:
+        - name: functions
+          image: "${PROJECT_NAME}-atomic-functions:latest" # Placeholder - replace with actual image URL
+          imagePullPolicy: IfNotPresent # Or Always if using 'latest' tag frequently
+          ports:
+            - name: main
+              containerPort: 3000
+              protocol: TCP
+            - name: secondary
+              containerPort: 3030
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: functions-secret
+            - configMapRef:
+                name: functions-configmap
+          # Individual env vars can also be set here if they need specific formatting
+          # or are not part of the bulk import from secret/configmap.
+          # Example:
+          # - name: MY_CUSTOM_VARIABLE
+          #   value: "some_specific_value"
+
+          # Probes should target the main port (3000) or a specific health check endpoint and port.
+          readinessProbe:
+            httpGet:
+              path: /healthz # Assuming a /healthz endpoint exists
+              port: main # Port 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: main
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Volume mounts if needed for persistent data (not typical for stateless functions unless specified)
+          # volumeMounts:
+          #   - name: functions-data
+          #     mountPath: /data
+      # volumes:
+      #   - name: functions-data
+      #     persistentVolumeClaim:
+      #       claimName: functions-pvc # If a PVC named 'functions-pvc' is defined

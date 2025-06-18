@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hasura-graphql-engine
+  namespace: hasura
+  labels:
+    app: hasura-graphql-engine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hasura-graphql-engine
+  template:
+    metadata:
+      labels:
+        app: hasura-graphql-engine
+    spec:
+      containers:
+        - name: hasura
+          image: hasura/graphql-engine:v2.15.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # Construct HASURA_GRAPHQL_DATABASE_URL from secret values
+            # This requires the container's entrypoint or command to handle variable substitution.
+            # Hasura's docker image entrypoint does this.
+            - name: HASURA_GRAPHQL_DATABASE_URL
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
+            # Source individual DB components for the above URI construction
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: hasura-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hasura-secret
+                  key: DB_PASSWORD
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: hasura-secret
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: hasura-secret
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: hasura-secret
+                  key: DB_NAME
+
+            # Hasura specific secrets
+            - name: HASURA_GRAPHQL_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hasura-secret
+                  key: HASURA_GRAPHQL_JWT_SECRET
+            - name: HASURA_GRAPHQL_ADMIN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hasura-secret
+                  key: HASURA_GRAPHQL_ADMIN_SECRET
+
+            # Other Hasura configurations from compose
+            - name: HASURA_GRAPHQL_UNAUTHORIZED_ROLE
+              value: "public"
+            - name: HASURA_GRAPHQL_LOG_LEVEL
+              value: "debug"
+            - name: HASURA_GRAPHQL_ENABLE_CONSOLE
+              value: "true" # Ensure this is a string 'true'
+
+          readinessProbe:
+            httpGet:
+              path: /healthz # Hasura's health check endpoint
+              port: http # 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3

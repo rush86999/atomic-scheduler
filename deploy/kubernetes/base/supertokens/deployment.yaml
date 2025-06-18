@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supertokens-core
+  namespace: supertokens
+  labels:
+    app: supertokens-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: supertokens-core
+  template:
+    metadata:
+      labels:
+        app: supertokens-core
+    spec:
+      containers:
+        - name: supertokens
+          image: registry.supertokens.io/supertokens/supertokens-postgresql:6.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3567
+              protocol: TCP
+          env:
+            # Construct POSTGRESQL_CONNECTION_URI from secret values
+            # This requires the shell to be available in the container to interpret the command.
+            # Most official images (including supertokens) have sh.
+            # An alternative is to use an initContainer to prepare the env var, but this is often sufficient.
+            - name: POSTGRESQL_CONNECTION_URI
+              valueFrom:
+                secretKeyRef:
+                  name: supertokens-db-secret
+                  key: DB_USER
+            # This is a bit tricky. We need to combine multiple secret values.
+            # A common way is to mount secrets as files and source them, or use an init container.
+            # However, for constructing a URI, we can try to do it with shell expansion if the entrypoint allows.
+            # Supertokens entrypoint might not directly expand this.
+            # Let's define them separately and assume the entrypoint script of Supertokens might construct it,
+            # or document that an init container or a custom entrypoint script is preferred for complex URI construction.
+            # For simplicity in this base manifest, we'll provide the components.
+            # The Supertokens container itself might be smart enough to pick up individual DB vars.
+            # Checking Supertokens docs: It primarily expects POSTGRESQL_CONNECTION_URI or individual vars like
+            # POSTGRESQL_USER, POSTGRESQL_PASSWORD, POSTGRESQL_HOST, POSTGRESQL_PORT, POSTGRESQL_DATABASE_NAME.
+            # Let's use those individual variables for clarity and reliability.
+
+            - name: POSTGRESQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: supertokens-db-secret
+                  key: DB_USER
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: supertokens-db-secret
+                  key: DB_PASSWORD
+            - name: POSTGRESQL_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: supertokens-db-secret
+                  key: DB_HOST
+            - name: POSTGRESQL_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: supertokens-db-secret
+                  key: DB_PORT
+            - name: POSTGRESQL_DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: supertokens-db-secret
+                  key: DB_NAME
+            - name: POSTGRESQL_TABLE_NAMES_PREFIX
+              value: "Supertokens" # As per original request
+            # Optional: API Keys, etc. would also come from secrets
+            # - name: API_KEYS
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: supertokens-api-keys
+            #       key: api_keys_string
+
+          readinessProbe:
+            httpGet:
+              path: /hello # Supertokens health check endpoint
+              port: http # 3567
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /hello
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
