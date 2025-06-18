@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# -----------------------------------------------------------------------------
+# Azure Configuration Variables for Atomic Stack Deployment
+# -----------------------------------------------------------------------------
+# This file is sourced by other scripts to set environment variables for Azure deployment.
+# Please review and update these values to match your Azure environment and preferences.
+
+# --- Azure Account and Subscription ---
+# These are critical and should be set correctly.
+# You can find your Subscription ID and Tenant ID in the Azure portal or via Azure CLI.
+export AZURE_SUBSCRIPTION_ID="your-subscription-id" # Replace with your Azure Subscription ID
+export AZURE_TENANT_ID="your-tenant-id"           # Replace with your Azure Tenant ID
+
+# --- Azure Region and Resource Group ---
+export AZURE_REGION="EastUS"                     # Replace with your desired Azure region (e.g., WestEurope, EastUS)
+export RESOURCE_GROUP_NAME="atomic-rg"           # Name of the resource group to deploy resources into.
+                                                 # The Terraform scripts assume this RG might exist or will create it if configured.
+                                                 # For this setup, we usually create it as part of TF or assume it exists.
+
+# --- Project and Environment Naming ---
+# Used for naming and tagging resources consistently.
+export PROJECT_NAME="atomic"                     # A short name for your project (e.g., myapp, atomic)
+export ENVIRONMENT_NAME="dev"                    # Deployment environment (e.g., dev, staging, prod)
+
+# --- Domain Name Configuration ---
+# The primary domain name under which your application will be accessible.
+export DOMAIN_NAME="example.com"                 # Replace with your actual domain name
+
+# --- AKS Cluster Configuration ---
+export AKS_CLUSTER_NAME_SUFFIX="cluster"         # Suffix for AKS cluster name, e.g. atomic-aks-cluster-dev
+export AKS_KUBERNETES_VERSION="1.27.9"           # Desired Kubernetes version for AKS (check Azure for latest supported)
+
+# --- Resource Naming Suffixes (used by Terraform to construct globally unique names) ---
+export ACR_NAME_SUFFIX="acr"                     # Suffix for Azure Container Registry name (e.g., atomicacr)
+export KEY_VAULT_NAME_SUFFIX="kv"                # Suffix for Azure Key Vault name (e.g., atomic-kv)
+export PG_SERVER_NAME_SUFFIX="pgs01"             # Suffix for PostgreSQL Flexible Server name (e.g., atomic-pgs01)
+
+# --- Azure Database for PostgreSQL Flexible Server Configuration ---
+export PG_ADMIN_USERNAME="pgatomicadmin"         # Admin username for PostgreSQL
+export PG_INITIAL_DATABASE_NAME="atomicdb"       # Name of the initial database to create
+
+# --- Optional: Log Analytics Workspace ---
+# If you have an existing Log Analytics Workspace for AKS monitoring, provide its Resource ID.
+# Otherwise, one might be created by Terraform or monitoring might use defaults.
+# export LOG_ANALYTICS_WORKSPACE_ID="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/your-monitor-rg/providers/Microsoft.OperationalInsights/workspaces/your-log-analytics-workspace"
+export LOG_ANALYTICS_WORKSPACE_ID="" # Leave empty if not using a specific one or if created by TF
+
+# --- ECR/ACR Image Names (Suffixes from project - these are the base image names) ---
+# These should match the 'name' field in the 'images' section of your Kustomize overlay for Azure.
+# The ACR Terraform module will use these with PROJECT_NAME to name repositories (e.g., atomic-atomic-functions).
+export IMAGE_NAME_SCHEDULER="atomic-scheduler"
+export IMAGE_NAME_FUNCTIONS="atomic-functions"
+export IMAGE_NAME_HANDSHAKE="atomic-handshake"
+export IMAGE_NAME_OAUTH="atomic-oauth"
+export IMAGE_NAME_APP="atomic-app"
+
+
+# --- Terraform Backend Configuration (Informational - configure in versions.tf) ---
+# These are for your reference when setting up the Azure Blob Storage backend in versions.tf.
+# The Resource Group for Terraform state should ideally be created manually beforehand for stability.
+# export TERRAFORM_STATE_RESOURCE_GROUP="your-terraform-state-rg" # RG for Storage Account
+# export TERRAFORM_STATE_STORAGE_ACCOUNT="yourtfstatesauniquename"  # Globally unique Storage Account name
+# export TERRAFORM_STATE_CONTAINER="tfstate"                      # Container name for state files
+# export TERRAFORM_STATE_KEY_PREFIX="azure/${PROJECT_NAME}/${ENVIRONMENT_NAME}" # Path within the container
+
+echo "Azure Configuration loaded from config.sh:"
+echo "  AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID}"
+echo "  AZURE_TENANT_ID: ${AZURE_TENANT_ID}"
+echo "  AZURE_REGION: ${AZURE_REGION}"
+echo "  RESOURCE_GROUP_NAME: ${RESOURCE_GROUP_NAME}"
+echo "  PROJECT_NAME: ${PROJECT_NAME}"
+echo "  ENVIRONMENT_NAME: ${ENVIRONMENT_NAME}"
+echo "  DOMAIN_NAME: ${DOMAIN_NAME}"
+echo "  AKS_CLUSTER_NAME_SUFFIX: ${AKS_CLUSTER_NAME_SUFFIX}"
+# Add other important variables here if you want them echoed when sourced.
