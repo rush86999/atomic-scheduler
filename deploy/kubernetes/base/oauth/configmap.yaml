@@ -4,40 +4,35 @@ metadata:
   name: oauth-configmap
   namespace: oauth
 data:
-  # General Application URLs
-  # NEXT_PUBLIC_APP_URL: This is the main frontend application URL that users access.
-  # It's where users might be redirected back to after successful OAuth flows.
-  NEXT_PUBLIC_APP_URL: "https://${HOST_NAME}" # Placeholder, replace ${HOST_NAME} with actual external domain
+  # External Application URL (where users are redirected back to)
+  NEXT_PUBLIC_APP_URL: "https://${HOST_NAME}"
 
-  # Handshake Service URL (internal Kubernetes service)
+  # Google OAuth Redirect URL (Callback URL for this oauth service)
+  GOOGLE_REDIRECT_URL: "https://${HOST_NAME}/v1/oauth/api/google-calendar-handshake/oauth2callback"
+
+  # Handshake Service URL (Internal Kubernetes service FQDN)
   HANDSHAKE_URL: "http://handshake-service.handshake.svc.cluster.local:3000"
 
-  # Google OAuth Configuration
-  # GOOGLE_REDIRECT_URL: The callback URL registered with Google for this OAuth service.
-  # It must point to an endpoint on this 'oauth' service itself, externally accessible.
-  GOOGLE_REDIRECT_URL: "https://${HOST_NAME}/v1/oauth/api/google-calendar-handshake/oauth2callback" # Path needs to match actual API route
+  # Zoom OAuth Redirect URL (Callback URL for this oauth service)
+  NEXT_PUBLIC_ZOOM_REDIRECT_URL: "https://${HOST_NAME}/v1/oauth/zoom/mobile-callback"
 
-  # Zoom OAuth Configuration
-  # NEXT_PUBLIC_ZOOM_CLIENT_ID: This is often the same as ZOOM_CLIENT_ID from secrets.
-  # If it's explicitly public and different, define it here. Otherwise, it can be sourced from secrets.
-  # For now, let's assume it's needed publicly and might be same or different.
-  # If it's always same as secret ZOOM_CLIENT_ID, app can just use that.
-  # If it's for frontend use and ZOOM_CLIENT_ID in secret is for backend, it could be different.
-  # Let's provide a placeholder here.
-  NEXT_PUBLIC_ZOOM_CLIENT_ID: "YOUR_PUBLIC_ZOOM_CLIENT_ID_IF_DIFFERENT" # Or reference from secret if same and app handles it
+  # Public Zoom Client ID (can be same as ZOOM_CLIENT_ID from secret, or a different public one)
+  # If it's always the same as the secret one, the app could just use the env var from the secret.
+  # Including it here if it's meant to be distinctly configured or explicitly public.
+  NEXT_PUBLIC_ZOOM_CLIENT_ID: "YOUR_PUBLIC_ZOOM_CLIENT_ID_PLACEHOLDER"
 
-  # NEXT_PUBLIC_ZOOM_REDIRECT_URL: The callback URL registered with Zoom for this OAuth service.
-  # It must point to an endpoint on this 'oauth' service itself, externally accessible.
-  NEXT_PUBLIC_ZOOM_REDIRECT_URL: "https://${HOST_NAME}/v1/oauth/zoom/mobile-callback" # Path needs to match actual API route
+  # Hasura GraphQL URL (if this oauth service needs to query Hasura for non-admin tasks)
+  HASURA_GRAPHQL_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080/v1/graphql"
 
-  # Default port for this Next.js OAuth service
+  # Application Port for this Next.js OAuth service
   PORT: "3000"
 
-  # Node environment
+  # Node Environment
   NODE_ENV: "production"
 
-  # Logging level
-  LOG_LEVEL: "info"
+  # Logging Level (optional)
+  # LOG_LEVEL: "info"
 
-  # Hasura URL (if the oauth service needs to query Hasura for non-admin tasks)
-  HASURA_GRAPHQL_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080/v1/graphql"
+  # Placeholder for the external host name.
+  # This value would be substituted into the URLs above by deployment automation or Ingress controller.
+  HOST_NAME: "your-app-domain.com" # Example placeholder

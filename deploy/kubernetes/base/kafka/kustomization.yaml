@@ -1,21 +1,23 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: kafka
+namespace: kafka # Sets the namespace for all resources in this kustomization
 
 resources:
   - namespace.yaml
-  - zookeeper-pvc.yaml
+  # PVCs are now part of statefulset volumeClaimTemplates, so no separate PVC files.
+  # - zookeeper-pvc.yaml # Removed
+  # - kafka-pvc.yaml # Removed
   - zookeeper-statefulset.yaml
   - zookeeper-service.yaml
-  - kafka-pvc.yaml
   - kafka-statefulset.yaml
   - kafka-service.yaml
 
-# Optional: Add common labels to all resources
+# Optional: Add common labels to all resources defined in this kustomization
 # commonLabels:
-#   app.kubernetes.io/part-of: atomic-stack
+#   app.kubernetes.io/component: message-queue
+#   app.kubernetes.io/part-of: atomic-stack # Or your specific application/project name
 
 # Optional: Add common annotations
 # commonAnnotations:
-#   source: "https://github.com/your-repo/atomic-stack"
+#   note: "Kafka and Zookeeper base configuration"

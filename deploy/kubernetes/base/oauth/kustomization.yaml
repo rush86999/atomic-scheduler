@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: oauth
+namespace: oauth # Sets the namespace for all resources in this kustomization
 
 resources:
   - namespace.yaml
@@ -10,11 +10,13 @@ resources:
   - deployment.yaml
   - service.yaml
 
-# Optional: Add common labels to all resources
+# Optional: Add common labels to all resources defined in this kustomization
 # commonLabels:
 #   app.kubernetes.io/name: oauth
+#   app.kubernetes.io/instance: oauth
+#   app.kubernetes.io/component: authentication-provider # Or as appropriate
 #   app.kubernetes.io/part-of: atomic-stack
 
 # Optional: Add common annotations
 # commonAnnotations:
-#   source: "https://github.com/your-repo/atomic-stack"
+#   note: "OAuth service base configuration"

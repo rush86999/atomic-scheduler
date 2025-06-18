@@ -6,7 +6,7 @@ metadata:
   labels:
     app: functions
 spec:
-  replicas: 1 # Start with 1, can be scaled
+  replicas: 1 # As specified, can be scaled
   selector:
     matchLabels:
       app: functions
@@ -17,32 +17,28 @@ spec:
     spec:
       containers:
         - name: functions
-          image: "${PROJECT_NAME}-atomic-functions:latest" # Placeholder - replace with actual image URL
-          imagePullPolicy: IfNotPresent # Or Always if using 'latest' tag frequently
+          image: "placeholder-atomic-functions:latest" # Consistent placeholder name
+          imagePullPolicy: IfNotPresent # Or "Always" if using :latest frequently in dev
           ports:
-            - name: main
-              containerPort: 3000
+            - name: main # Main application port
+              containerPort: 3000 # Should match PORT in ConfigMap
               protocol: TCP
-            - name: secondary
-              containerPort: 3030
+            - name: secondary # Secondary port (e.g., for WebSockets)
+              containerPort: 3030 # Should match PORT_SECONDARY in ConfigMap
               protocol: TCP
           envFrom:
             - secretRef:
                 name: functions-secret
             - configMapRef:
                 name: functions-configmap
-          # Individual env vars can also be set here if they need specific formatting
-          # or are not part of the bulk import from secret/configmap.
-          # Example:
-          # - name: MY_CUSTOM_VARIABLE
-          #   value: "some_specific_value"
+          # No individual 'env:' mappings here unless specific overrides or formatting are needed,
+          # as most should be covered by functions-secret and functions-configmap.
 
-          # Probes should target the main port (3000) or a specific health check endpoint and port.
           readinessProbe:
             httpGet:
-              path: /healthz # Assuming a /healthz endpoint exists
-              port: main # Port 3000
-            initialDelaySeconds: 10
+              path: /healthz # Assuming a standard /healthz endpoint
+              port: main    # Main port 3000
+            initialDelaySeconds: 15 # Allow more time for functions service with many connections
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
@@ -50,15 +46,14 @@ spec:
             httpGet:
               path: /healthz
               port: main
-            initialDelaySeconds: 30
+            initialDelaySeconds: 45 # More conservative for liveness
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
-          # Volume mounts if needed for persistent data (not typical for stateless functions unless specified)
+          # Volume mounts if needed (e.g., for temporary file storage if functions process files)
           # volumeMounts:
-          #   - name: functions-data
-          #     mountPath: /data
+          #   - name: temp-storage
+          #     mountPath: /tmp
       # volumes:
-      #   - name: functions-data
-      #     persistentVolumeClaim:
-      #       claimName: functions-pvc # If a PVC named 'functions-pvc' is defined
+      #   - name: temp-storage
+      #     emptyDir: {} # Example of an emptyDir volume for temporary data

@@ -6,8 +6,8 @@ metadata:
   labels:
     app: opensearch
 spec:
-  serviceName: "opensearch-headless" # Connects to the headless service for stable network ID
-  replicas: 1
+  serviceName: "opensearch-headless" # Must match the headless Service name
+  replicas: 1 # For base simplicity
   selector:
     matchLabels:
       app: opensearch
@@ -17,67 +17,72 @@ spec:
         app: opensearch
     spec:
       terminationGracePeriodSeconds: 30 # Allow time for OpenSearch to shut down gracefully
-      # OpenSearch recommends specific sysctl settings for performance (e.g., vm.max_map_count).
-      # This usually requires initContainers with privileged access or node-level configuration.
-      # For a base setup, we'll skip direct sysctl modification from the pod.
-      # initContainers:
-      # - name: configure-sysctl
-      #   image: busybox
-      #   command: ["sh", "-c", "sysctl -w vm.max_map_count=262144"]
-      #   securityContext:
-      #     privileged: true # Requires appropriate PSP/SCC
+      # OpenSearch official Docker images run as 'opensearch' user (UID 1000).
+      # If the storage provisioner creates volumes owned by root, fsGroup might be needed.
+      # However, many modern CSI drivers handle this, or the image itself manages permissions on /usr/share/opensearch/data.
+      # securityContext:
+      #   fsGroup: 1000 # Ensure the OpenSearch user can write to the volume
+      initContainers:
+      # Set vm.max_map_count required by OpenSearch. This needs privileged access or node configuration.
+      # This initContainer is best effort and might not work on all clusters depending on security policies.
+      - name: configure-sysctl
+        image: busybox:1.36 # Or any image with sysctl
+        command: ["sh", "-c", "sysctl -w vm.max_map_count=262144 || true"] # Attempt to set, proceed if it fails
+        securityContext:
+          privileged: true # Requires appropriate PSP/SCC or cluster configuration allowing privileged initContainers
       containers:
         - name: opensearch
-          image: opensearchproject/opensearch:1.2.0
+          image: opensearchproject/opensearch:1.2.0 # As specified
           imagePullPolicy: IfNotPresent
           securityContext:
             capabilities:
               add: ["IPC_LOCK"] # Required for bootstrap.memory_lock=true
-            # runAsUser: 1000 # OpenSearch image runs as opensearch user (UID 1000) by default
+            # runAsUser: 1000 # Usually not needed as image specifies user
             # runAsGroup: 1000
           ports:
-            - name: http
+            - name: http # REST API
               containerPort: 9200
               protocol: TCP
-            - name: transport
+            - name: transport # Node-to-node communication
               containerPort: 9600
               protocol: TCP
           env:
             - name: cluster.name
               value: "opensearch-cluster"
-            - name: node.name
-              # value: "opensearch-node1" # Fixed name, or use dynamic from pod name
-              valueFrom: # Use pod name for node.name for clarity if scaled (though single replica here)
+            - name: node.name # Set node name dynamically from pod metadata name
+              valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            # For a single-node cluster, discovery can point to itself.
-            # The headless service provides a stable FQDN for the pod: opensearch-0.opensearch-headless.opensearch.svc.cluster.local
+            # For single-node cluster, discovery.seed_hosts can point to itself or be empty if discovery.type=single-node.
+            # Using FQDN of the pod for consistency if ever scaled, though single-node type handles it.
             - name: discovery.seed_hosts
               value: "opensearch-0.opensearch-headless.opensearch.svc.cluster.local"
             - name: cluster.initial_master_nodes # For bootstrapping a new cluster
-              value: "opensearch-0" # Pod name of the initial master
-            - name: bootstrap.memory_lock
-              value: "true" # Lock memory, ensure IPC_LOCK capability and host ulimits
-            - name: OPENSEARCH_JAVA_OPTS
-              value: "-Xms512m -Xmx512m" # Adjust heap size as needed
-            - name: DISABLE_INSTALL_DEMO_CONFIG # From compose, disables demo security plugin
+              valueFrom: # Use pod name (e.g. opensearch-0)
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: bootstrap.memory_lock # Lock JVM memory, ensure IPC_LOCK capability and host ulimits
               value: "true"
-            # For a single node cluster, these settings are typical
+            - name: OPENSEARCH_JAVA_OPTS # Configure JVM heap size
+              value: "-Xms512m -Xmx512m" # As specified
+            - name: DISABLE_INSTALL_DEMO_CONFIG # Disables demo security plugin for a non-secure base
+              value: "true"
+            # Crucial for single-node setup to avoid issues with discovery trying to find other masters.
             - name: discovery.type
-              value: "single-node" # Simplifies discovery for a single node setup
-            # - name: path.data # Default is /usr/share/opensearch/data, which is mounted
-            # - name: path.logs # Default is /usr/share/opensearch/logs, consider separate PVC for logs in production
-
+              value: "single-node"
+            # Optional: set path.data if it differs from the default /usr/share/opensearch/data
+            # - name: path.data
+            #   value: "/usr/share/opensearch/data"
           volumeMounts:
-            - name: opensearch-data
+            - name: data # Must match volumeClaimTemplates.metadata.name
               mountPath: /usr/share/opensearch/data
           readinessProbe:
             httpGet:
-              path: /_cluster/health?local=true # Check local node health
-              port: http # 9200
-              scheme: HTTP # Assuming HTTP for now, HTTPS if security is enabled
-            initialDelaySeconds: 20
-            periodSeconds: 10
+              path: /_cluster/health?local=true # Check local node health status
+              port: http # Port 9200
+              scheme: HTTP # Assuming HTTP for now, as demo security is disabled
+            initialDelaySeconds: 20 # OpenSearch can take some time to start
+            periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           livenessProbe:
@@ -85,11 +90,16 @@ spec:
               path: /_cluster/health?local=true
               port: http
               scheme: HTTP
-            initialDelaySeconds: 60 # Give more time for initial startup
+            initialDelaySeconds: 60 # More conservative for liveness
             periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 5 # Be more tolerant for liveness
-      volumes:
-        - name: opensearch-data
-          persistentVolumeClaim:
-            claimName: opensearch-data-pvc
+            timeoutSeconds: 10 # Longer timeout for liveness
+            failureThreshold: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: data # This name is referenced in volumeMounts.name
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi # As specified
+      # storageClassName: "your-storage-class" # Optional: specify if not using default SC.

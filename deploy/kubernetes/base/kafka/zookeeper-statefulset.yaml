@@ -7,7 +7,7 @@ metadata:
     app: zookeeper
 spec:
   serviceName: "zookeeper-headless" # Must match the headless Service name
-  replicas: 1
+  replicas: 1 # For base simplicity
   selector:
     matchLabels:
       app: zookeeper
@@ -19,7 +19,7 @@ spec:
       terminationGracePeriodSeconds: 10
       containers:
         - name: zookeeper
-          image: confluentinc/cp-zookeeper:5.4.2
+          image: confluentinc/cp-zookeeper:5.4.2 # As specified
           imagePullPolicy: IfNotPresent
           ports:
             - name: client
@@ -36,22 +36,21 @@ spec:
               value: "2181"
             - name: ZOOKEEPER_TICK_TIME
               value: "2000"
-            - name: ZOOKEEPER_DATA_DIR
+            - name: ZOOKEEPER_DATA_DIR # Path for data
               value: "/var/lib/zookeeper/data"
-            - name: ZOOKEEPER_LOG_DIR # Note: confluent images might use ZOOKEEPER_DATA_LOG_DIR or just log to data dir by default.
-              value: "/var/lib/zookeeper/log" # Explicitly setting log dir.
-            # For single node, server ID is typically 1
-            - name: ZOOKEEPER_SERVER_ID
+            - name: ZOOKEEPER_LOG_DIR # Path for logs (or ZOOKEEPER_DATA_LOG_DIR for some older Confluent images)
+              value: "/var/lib/zookeeper/log"
+            - name: ZOOKEEPER_SERVER_ID # For single node, typically 1
               value: "1"
-            # For single node, servers list is just itself
+            # For single node, ZOOKEEPER_SERVERS can be omitted or point to itself.
+            # Confluent images often expect this for proper initialization, even for a single instance.
+            # The FQDN format is pod-name.service-name.namespace.svc.cluster.local
             - name: ZOOKEEPER_SERVERS
               value: "zookeeper-0.zookeeper-headless.kafka.svc.cluster.local:2888:3888"
-
-
           volumeMounts:
-            - name: zookeeper-data
+            - name: data # Corresponds to volumeClaimTemplates.metadata.name for data
               mountPath: /var/lib/zookeeper/data
-            - name: zookeeper-log
+            - name: log  # Corresponds to volumeClaimTemplates.metadata.name for logs
               mountPath: /var/lib/zookeeper/log
           readinessProbe:
             exec:
@@ -73,10 +72,20 @@ spec:
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
-      volumes:
-        - name: zookeeper-data
-          persistentVolumeClaim:
-            claimName: zookeeper-data-pvc
-        - name: zookeeper-log
-          persistentVolumeClaim:
-            claimName: zookeeper-log-pvc
+  volumeClaimTemplates:
+  - metadata:
+      name: data # Name for the data PVC template
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 5Gi # As specified
+      # storageClassName: "your-storage-class" # Optional
+  - metadata:
+      name: log # Name for the log PVC template
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 5Gi # As specified
+      # storageClassName: "your-storage-class" # Optional

@@ -6,7 +6,7 @@ metadata:
   labels:
     app: postgres
 spec:
-  serviceName: "postgres-service" # Must match the Service name
+  serviceName: "postgres-headless" # Must match the headless Service name
   replicas: 1
   selector:
     matchLabels:
@@ -19,7 +19,7 @@ spec:
       terminationGracePeriodSeconds: 10
       containers:
         - name: postgres
-          image: postgres:14-alpine
+          image: postgres:14-alpine # As specified
           imagePullPolicy: IfNotPresent
           ports:
             - name: postgresql
@@ -36,147 +36,57 @@ spec:
                 secretKeyRef:
                   name: postgres-secret
                   key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              value: "atomicdb"
-            - name: PGDATA
-              value: "/var/lib/postgresql/data/pgdata" # Ensures data is stored in the mounted volume subpath
+            - name: POSTGRES_DB # Name of the database to create
+              value: "atomicdb" # As specified
+            - name: PGDATA # Explicitly set the data directory path
+              value: "/var/lib/postgresql/data/pgdata" # Standard for official images when using a subpath in the volume
           volumeMounts:
-            - name: postgres-storage
+            - name: postgres-data # This name must match a volumeClaimTemplates.metadata.name
               mountPath: /var/lib/postgresql/data
           readinessProbe:
             exec:
               command:
-                - "pg_isready"
-                - "-U"
-                - "postgres" # This should match POSTGRES_USER from secret for robustness. Using placeholder for now.
-                - "-d"
-                - "atomicdb"
-            initialDelaySeconds: 10
+                - "sh"
+                - "-c"
+                # Use the user from the secret. Ensure this user can connect to the default 'postgres' db or POSTGRES_DB.
+                # pg_isready -U expects the username to be passed.
+                - "pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB) -h 127.0.0.1 -p 5432"
+            env: # Pass credentials to the probe
+              - name: POSTGRES_USER
+                valueFrom:
+                  secretKeyRef:
+                    name: postgres-secret
+                    key: POSTGRES_USER
+              - name: POSTGRES_DB
+                value: "atomicdb"
+            initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
           livenessProbe:
             exec:
               command:
-                - "pg_isready"
-                - "-U"
-                - "postgres" # This should match POSTGRES_USER from secret for robustness. Using placeholder for now.
-                - "-d"
-                - "atomicdb"
-            initialDelaySeconds: 30
-            periodSeconds: 10
+                - "sh"
+                - "-c"
+                - "pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB) -h 127.0.0.1 -p 5432"
+            env:
+              - name: POSTGRES_USER
+                valueFrom:
+                  secretKeyRef:
+                    name: postgres-secret
+                    key: POSTGRES_USER
+              - name: POSTGRES_DB
+                value: "atomicdb"
+            initialDelaySeconds: 45
+            periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
   volumeClaimTemplates:
-    - metadata:
-        name: postgres-storage # Name of the volume claim template
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 10Gi # Must match or exceed pvc.yaml if not using this for provisioning
-        # storageClassName: "" # Optional: specify a storage class if needed
-        # Note: The pvc.yaml created earlier is standalone.
-        # StatefulSets typically define volumeClaimTemplates to dynamically provision PVCs.
-        # If using the standalone postgres-pvc.yaml, the spec.template.spec.volumes section
-        # would reference it directly like in a Deployment, and volumeClaimTemplates would be removed.
-        # For this exercise, I'll keep volumeClaimTemplates as it's standard for StatefulSets.
-        # The standalone pvc.yaml might be redundant or for a different purpose if this is used.
-        # To use the existing PVC:
-        # Remove volumeClaimTemplates block.
-        # In spec.template.spec.volumes:
-        #   - name: postgres-storage
-        #     persistentVolumeClaim:
-        #       claimName: postgres-pvc
-        # For now, proceeding with volumeClaimTemplates as it's idiomatic for StatefulSets.
-        # This means the pvc.yaml is somewhat redundant if the StatefulSet manages its own PVC.
-        # Let's adjust to use the explicitly defined PVC to match the request structure.
-        # Will remove volumeClaimTemplates and adjust spec.template.spec.volumes.
----
-# Re-generating statefulset.yaml to use the pre-defined PVC for clarity with request.
-
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: postgres
-  namespace: postgres
-  labels:
-    app: postgres
-spec:
-  serviceName: "postgres-service"
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgres
-  template:
-    metadata:
-      labels:
-        app: postgres
+  - metadata:
+      name: postgres-data # This name is referenced in volumeMounts.name
     spec:
-      terminationGracePeriodSeconds: 10
-      containers:
-        - name: postgres
-          image: postgres:14-alpine
-          imagePullPolicy: IfNotPresent
-          ports:
-            - name: postgresql
-              containerPort: 5432
-              protocol: TCP
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              value: "atomicdb"
-            - name: PGDATA # Official Postgres image uses this to specify data directory
-              value: "/var/lib/postgresql/data/pgdata"
-          volumeMounts:
-            - name: postgres-storage
-              mountPath: /var/lib/postgresql/data
-          readinessProbe:
-            exec:
-              command:
-                - "sh"
-                - "-c"
-                - "pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB)"
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-            env: # Make sure POSTGRES_USER and POSTGRES_DB are available to the probe
-             - name: POSTGRES_USER
-               valueFrom:
-                 secretKeyRef:
-                   name: postgres-secret
-                   key: POSTGRES_USER
-             - name: POSTGRES_DB
-               value: "atomicdb"
-          livenessProbe:
-            exec:
-              command:
-                - "sh"
-                - "-c"
-                - "pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB)"
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-            env: # Make sure POSTGRES_USER and POSTGRES_DB are available to the probe
-             - name: POSTGRES_USER
-               valueFrom:
-                 secretKeyRef:
-                   name: postgres-secret
-                   key: POSTGRES_USER
-             - name: POSTGRES_DB
-               value: "atomicdb"
-      volumes:
-        - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: postgres-pvc # References the PVC created in pvc.yaml
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi # As specified
+      # storageClassName: "your-storage-class" # Optional: specify if not using default SC.

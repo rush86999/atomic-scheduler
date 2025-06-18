@@ -6,7 +6,7 @@ metadata:
   labels:
     app: hasura-graphql-engine
 spec:
-  replicas: 1
+  replicas: 1 # As specified, Hasura is stateless and can be scaled
   selector:
     matchLabels:
       app: hasura-graphql-engine
@@ -17,19 +17,19 @@ spec:
     spec:
       containers:
         - name: hasura
-          image: hasura/graphql-engine:v2.15.2
+          image: hasura/graphql-engine:v2.15.2 # As specified
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: 8080 # Default Hasura port
               protocol: TCP
           env:
-            # Construct HASURA_GRAPHQL_DATABASE_URL from secret values
-            # This requires the container's entrypoint or command to handle variable substitution.
-            # Hasura's docker image entrypoint does this.
+            # Construct HASURA_GRAPHQL_DATABASE_URL from individual secret values.
+            # Hasura's entrypoint script handles this variable substitution.
             - name: HASURA_GRAPHQL_DATABASE_URL
               value: "postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
-            # Source individual DB components for the above URI construction
+
+            # Source individual DB components from the secret for the URI construction above
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
@@ -68,7 +68,7 @@ spec:
                   name: hasura-secret
                   key: HASURA_GRAPHQL_ADMIN_SECRET
 
-            # Other Hasura configurations from compose
+            # Other Hasura configurations from the prompt
             - name: HASURA_GRAPHQL_UNAUTHORIZED_ROLE
               value: "public"
             - name: HASURA_GRAPHQL_LOG_LEVEL
@@ -79,16 +79,16 @@ spec:
           readinessProbe:
             httpGet:
               path: /healthz # Hasura's health check endpoint
-              port: http # 8080
-            initialDelaySeconds: 5
+              port: http   # Port 8080
+            initialDelaySeconds: 10 # Allow time for Hasura to connect to DB and start
             periodSeconds: 10
-            timeoutSeconds: 2
+            timeoutSeconds: 5
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
-            initialDelaySeconds: 15
-            periodSeconds: 20
-            timeoutSeconds: 2
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
             failureThreshold: 3

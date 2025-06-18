@@ -1,4 +1,4 @@
-# Headless service for Zookeeper pod discovery (DNS records for zookeeper-0.zookeeper-headless.kafka.svc.cluster.local)
+# Headless service for Zookeeper pod discovery (DNS records like zookeeper-0.zookeeper-headless.kafka.svc.cluster.local)
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,8 +9,11 @@ metadata:
 spec:
   clusterIP: None # Defines the service as headless
   selector:
-    app: zookeeper
+    app: zookeeper # Selects the Zookeeper pods
   ports:
+    - name: client # Port 2181 is also exposed here for completeness, though client-service is primary for clients
+      port: 2181
+      targetPort: client
     - name: server
       port: 2888
       targetPort: server
@@ -19,7 +22,7 @@ spec:
       targetPort: leader-election
 
 ---
-# ClusterIP service for Zookeeper clients
+# ClusterIP service for Zookeeper clients (e.g., Kafka brokers)
 apiVersion: v1
 kind: Service
 metadata:
@@ -30,9 +33,9 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app: zookeeper
+    app: zookeeper # Selects the Zookeeper pods
   ports:
     - name: client
       protocol: TCP
-      port: 2181
-      targetPort: client
+      port: 2181       # Port the service will listen on for client connections
+      targetPort: client # Matches the 'client' port name in the Zookeeper StatefulSet (containerPort 2181)

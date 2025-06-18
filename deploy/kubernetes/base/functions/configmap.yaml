@@ -4,81 +4,55 @@ metadata:
   name: functions-configmap
   namespace: functions
 data:
-  NODE_ENV: "production" # Or "development", "staging" as appropriate for the base
-  FUNCTION_SERVER_URL: "http://functions-service.functions.svc.cluster.local:3000"
-  APP_CLIENT_URL: "http://your-frontend-app-url.com" # Placeholder: replace with actual client URL or K8s service if applicable
-  HANDSHAKE_URL: "http://your-handshake-service-url.com" # Placeholder: replace or use K8s service
-  GOOGLE_CALENDAR_WEBHOOK_URL: "https://your-domain.com/api/google/calendar/webhook" # Needs external exposure or specific setup
+  # Core Application Settings
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  PORT: "3000" # Main port for the functions service
+  PORT_SECONDARY: "3030" # Secondary port (e.g., for WebSockets, as seen in compose)
+  FUNCTION_SERVER_URL: "http://functions-service.functions.svc.cluster.local:3000" # Self-reference for internal calls if needed
 
-  # Hasura Configuration
+  # External URL Placeholders (to be replaced by actual domain names, e.g., via Ingress)
+  APP_CLIENT_URL: "https://${HOST_NAME}" # Main frontend application URL
+  HANDSHAKE_URL: "https://${HOST_NAME}/v1/handshake" # External URL for handshake service/endpoint
+  OAUTH_REDIRECT_URL: "https://${HOST_NAME}/v1/oauth/callback" # Example generic OAuth callback
+  GOOGLE_CALENDAR_WEBHOOK_URL: "https://${HOST_NAME}/api/google/calendar/webhook" # Example webhook URL exposed by this functions service
+
+  # Internal Service Discovery URLs
   HASURA_GRAPHQL_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080/v1/graphql"
-  # HASURA_GRAPHQL_URL is often used as an alias for HASURA_GRAPHQL_GRAPHQL_URL by some tools/sdks
-  HASURA_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080"
+  HASURA_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080" # Base Hasura URL
 
+  S3_ENDPOINT: "http://minio-service.minio.svc.cluster.local:8484" # Internal MinIO S3 endpoint
+  S3_BUCKET: "atomic-assets" # Default bucket name
+  # S3_PUBLIC_URL: "http://minio-service.minio.svc.cluster.local:8484/atomic-assets" # Or external if Minio is exposed
 
-  # Storage (Minio/S3) Configuration
-  S3_ENDPOINT: "http://minio-service.minio.svc.cluster.local:8484" # Internal Minio endpoint
-  S3_BUCKET: "atomic-assets" # Default bucket name, make sure it's created in Minio
-  S3_PUBLIC_URL: "http://minio-service.minio.svc.cluster.local:8484/atomic-assets" # Or external Minio URL if exposed
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service.kafka.svc.cluster.local:9092" # Kafka brokers
+  # KAFKA_SCHEMA_REGISTRY_URL: "http://schema-registry-service.kafka.svc.cluster.local:8081" # If using Schema Registry
 
-  # Kafka Configuration
-  KAFKA_BROKERS: "kafka-service.kafka.svc.cluster.local:9092" # List of Kafka brokers
-  KAFKA_SCHEMA_REGISTRY_URL: "http://schema-registry-service.kafka.svc.cluster.local:8081" # If using Schema Registry
-  # KAFKA_CONSUMER_GROUP_ID: "functions-group" # Example consumer group
+  OPENSEARCH_ENDPOINT: "http://opensearch-service.opensearch.svc.cluster.local:9200" # OpenSearch endpoint
 
-  # OpenSearch Configuration
-  OPENSEARCH_URL: "http://opensearch-service.opensearch.svc.cluster.local:9200" # OpenSearch endpoint
+  OPTAPLANNER_URL: "http://optaplanner-service.optaplanner.svc.cluster.local:8081" # Optaplanner service endpoint
 
-  # Optaplanner Configuration
-  OPTAPLANNER_URL: "http://optaplanner-service.optaplanner.svc.cluster.local:8080" # Optaplanner endpoint (assuming it has a similar service structure)
-  # If Optaplanner is one of the java-services, the name might be different, e.g., java-atomic-optaplanner-service
+  # Supertokens (if functions service needs to call Supertokens core directly)
+  SUPERTOKENS_CORE_URL: "http://supertokens-service.supertokens.svc.cluster.local:3567"
 
-  # Rate Limiting (example, if used)
-  # RATE_LIMIT_WINDOW_MS: "60000"
-  # RATE_LIMIT_MAX_REQUESTS: "100"
+  # Redis (if used)
+  # REDIS_URL: "redis://redis-service.redis.svc.cluster.local:6379"
 
-  # Other non-sensitive configurations
-  LOG_LEVEL: "info" # Or "debug", "warn", "error"
-  PORT: "3000" # Main application port
-  PORT_SECONDARY: "3030" # Secondary port, if used by the application
-
-  # Timezone
+  # Other non-sensitive configurations from docker-compose or app needs
   TZ: "UTC"
+  # CORS settings might be here if not hardcoded
+  # CORS_ORIGIN: "https://${HOST_NAME},http://localhost:3001" # Example
 
-  # CORS settings (example)
-  # CORS_ORIGIN: "http://localhost:3001,https://your-app.com"
-  # CORS_METHODS: "GET,POST,PUT,DELETE,PATCH,OPTIONS"
-  # CORS_ALLOWED_HEADERS: "Content-Type,Authorization"
+  # Nhost specific variables from compose, if non-sensitive and needed by functions directly.
+  # Many NHOST_ variables are for configuring Nhost's services themselves or are aliases.
+  # NHOST_SERVER_URL: "http://localhost:1337" # Example from compose, likely dev only.
+  # NHOST_CONSOLE_URL: "http://localhost:9000" # Example from compose, likely dev only.
+  # These are omitted as they seem like local development URLs for other Nhost services,
+  # not direct configurations for this 'functions' microservice in a K8s context.
+  # If there are specific non-sensitive NHOST_ variables that this 'functions' service consumes, they should be added.
 
-  # Redis (if used, example)
-  # REDIS_HOST: "redis-service.redis.svc.cluster.local"
-  # REDIS_PORT: "6379"
+  # Placeholder for the external host name, which will be substituted by Ingress or other mechanisms
+  HOST_NAME: "your-app-domain.com" # Example placeholder, actual value depends on deployment
 
-  # These are just examples; the actual needed non-sensitive variables depend on the functions service implementation.
-  # The list from docker-compose.yaml for 'functions' should be reviewed for any other non-sensitive vars.
-  NHOST_ADMIN_SECRET: "admin-secret-from-compose-but-should-be-in-secret" # This was in compose, but name implies secret. Moved to secret.yaml as HASURA_GRAPHQL_ADMIN_SECRET
-  NHOST_WEBHOOK_SECRET: "webhook-secret-from-compose-but-should-be-in-secret" # Likewise
-  NHOST_JWT_SECRET: "jwt-secret-from-compose-but-should-be-in-secret" # Likewise (related to Hasura JWT)
-
-  # These were in docker-compose for functions, ensure they are correctly mapped:
-  # Some of these are clearly dependent on other services being named consistently in K8s.
-  # HASURA_GRAPHQL_ADMIN_SECRET -> in secret.yaml
-  # HASURA_GRAPHQL_DATABASE_URL -> constructed in deployment from secret parts
-  # HASURA_GRAPHQL_JWT_SECRET -> in secret.yaml
-  # HASURA_GRAPHQL_UNAUTHORIZED_ROLE -> this is a Hasura config, not directly for functions, but functions might need to know it.
-  # For now, assuming functions doesn't need HASURA_GRAPHQL_UNAUTHORIZED_ROLE directly.
-
-  # Variables like NHOST_... from the compose file seem to be for Nhost's own control plane or specific Nhost CLI behavior.
-  # If the 'functions' service is a generic microservice, it might not need Nhost-specific variables like NHOST_ADMIN_SECRET,
-  # NHOST_WEBHOOK_SECRET, unless it's specifically interacting with an Nhost control plane.
-  # Given Hasura admin/JWT secrets are already covered, these NHOST_ prefixed ones might be redundant or for a different context.
-  # I will omit NHOST_ prefixed variables from the ConfigMap for now, assuming their roles are covered by more standard
-  # variable names (like HASURA_GRAPHQL_ADMIN_SECRET for Hasura interaction).
-  # If they are truly distinct and non-sensitive, they can be added here.
-  # The docker-compose used NHOST_ variables which often alias to Hasura ones.
-
-  # Ensure all URLs point to the correct K8s internal service names and namespaces.
-  # Example: `optaplanner-service.optaplanner.svc.cluster.local` assumes an `optaplanner` namespace and `optaplanner-service`.
-  # Adjust these if your service naming or namespace structure is different.
-  # For services within the SAME namespace as `functions`, you can use the short form: e.g. `http://my-other-service:port`
-  # This ConfigMap assumes services are in their own dedicated namespaces as per previous steps.
+  # Ensure all necessary non-sensitive environment variables from the 'functions' service
+  # in the docker-compose.yaml are represented here, adapted for Kubernetes internal service discovery.

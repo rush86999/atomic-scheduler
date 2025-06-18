@@ -4,29 +4,28 @@ metadata:
   name: handshake-configmap
   namespace: handshake
 data:
-  # Hasura GraphQL URL
+  # Hasura GraphQL URL (for internal communication from Handshake service's backend if applicable)
   HASURA_GRAPHQL_GRAPHQL_URL: "http://hasura-service.hasura.svc.cluster.local:8080/v1/graphql"
 
-  # Meeting Assist Admin URL (pointing to the 'functions' service)
-  # The exact path "/schedule-assist/" needs to be confirmed based on functions service's actual API routes.
-  MEETING_ASSIST_ADMIN_URL: "http://functions-service.functions.svc.cluster.local:3000/schedule-assist/" # Placeholder path, adjust as needed
+  # Meeting Assist Admin URL (pointing to the 'functions' service with specific path)
+  MEETING_ASSIST_ADMIN_URL: "http://functions-service.functions.svc.cluster.local:3000/schedule-assist/publisherScheduleMeeting/schedule-meeting-to-queue-admin"
 
-  # Public URL for the handshake API itself, potentially exposed via an Ingress
-  # This is often used by frontend clients. The ${HOST_NAME} would be replaced by actual domain.
-  # The path "/v1/functions/handshake-api/" suggests it might be a specific route on an API gateway or the functions service itself.
-  # If this handshake service *is* the API, then it would be its own external URL.
-  # Given it's a Next.js app, it might serve its own API routes.
-  # Let's assume this handshake service exposes an API at its root or a specific path.
-  # If NEXT_PUBLIC_ATOMIC_HANDSHAKE_API refers to *this* service's external URL:
-  NEXT_PUBLIC_ATOMIC_HANDSHAKE_API: "https://${HOST_NAME}/api/handshake" # Example path on this service, adjust if needed
+  # Public URL for the handshake API itself, potentially exposed via an Ingress.
+  # This is used by frontend clients. The ${HOST_NAME} would be replaced by actual domain.
+  # The path "/v1/functions/handshake-api/..." suggests it might be a specific route on an API gateway or the functions service.
+  # However, the variable name NEXT_PUBLIC_ATOMIC_HANDSHAKE_API implies it's an API provided BY this handshake service itself.
+  # If this Handshake service (Next.js app) exposes its own API routes at this path:
+  NEXT_PUBLIC_ATOMIC_HANDSHAKE_API: "https://${HOST_NAME}/v1/functions/handshake-api/createRecurMeetAssists/create-recur-meet-assists-public"
 
-  # Default port for Next.js standalone server.js
+  # Default port for this Next.js Handshake application
   PORT: "3000"
 
   # Node environment
   NODE_ENV: "production"
 
-  # Any other non-sensitive environment variables required by the handshake service
-  # For example, if it needs to know its own public URL for generating links (can be same as NEXT_PUBLIC_ATOMIC_HANDSHAKE_API or different)
-  # APP_URL: "https://${HOST_NAME}" # General application URL
-  LOG_LEVEL: "info"
+  # Logging level (optional, can be added if needed)
+  # LOG_LEVEL: "info"
+
+  # Placeholder for the external host name. This variable itself isn't typically used directly by Next.js like this,
+  # but the value would be substituted into the URLs above during deployment or by an Ingress controller.
+  HOST_NAME: "your-app-domain.com" # Example placeholder, actual value depends on deployment context.

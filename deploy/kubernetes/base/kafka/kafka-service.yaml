@@ -1,4 +1,4 @@
-# Headless service for Kafka broker pod discovery (DNS records for kafka-0.kafka-headless.kafka.svc.cluster.local)
+# Headless service for Kafka broker pod discovery (DNS records like kafka-0.kafka-headless.kafka.svc.cluster.local)
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,15 +9,14 @@ metadata:
 spec:
   clusterIP: None # Defines the service as headless
   selector:
-    app: kafka
+    app: kafka # Selects the Kafka pods
   ports:
     - name: internal # Port for broker-to-broker or direct pod access if needed
       port: 9092
-      targetPort: internal
-    # Add other ports if necessary, e.g., for different listener types
+      targetPort: internal # Matches 'internal' port name in Kafka StatefulSet
 
 ---
-# ClusterIP service for Kafka clients (applications connecting to Kafka)
+# ClusterIP service for Kafka clients (applications connecting to Kafka broker)
 apiVersion: v1
 kind: Service
 metadata:
@@ -30,7 +29,7 @@ spec:
   selector:
     app: kafka # Selects the Kafka pods
   ports:
-    - name: client
+    - name: client # Port for clients to connect to Kafka
       protocol: TCP
-      port: 9092 # External port clients connect to
-      targetPort: internal # Target port on the Kafka pods (containerPort name 'internal')
+      port: 9092       # External port clients connect to (service port)
+      targetPort: internal # Target port on the Kafka pods (containerPort name 'internal', which is 9092)
