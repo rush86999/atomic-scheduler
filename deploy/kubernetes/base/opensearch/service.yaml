@@ -1,0 +1,41 @@
+# Headless service for OpenSearch pod discovery
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch-headless
+  namespace: opensearch
+  labels:
+    app: opensearch
+spec:
+  clusterIP: None # Defines the service as headless
+  selector:
+    app: opensearch
+  ports:
+    # Port 9600 is for node-to-node communication (transport)
+    # It's useful for the headless service if you had multiple nodes.
+    - name: transport
+      port: 9600
+      targetPort: transport
+
+---
+# ClusterIP service for OpenSearch clients
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch-service
+  namespace: opensearch
+  labels:
+    app: opensearch
+spec:
+  type: ClusterIP
+  selector:
+    app: opensearch # Selects the OpenSearch pods
+  ports:
+    - name: http
+      protocol: TCP
+      port: 9200 # External port clients connect to
+      targetPort: http # Target port on the OpenSearch pods (containerPort name 'http')
+    - name: transport
+      protocol: TCP
+      port: 9600 # Also exposing transport port on ClusterIP if needed by some clients
+      targetPort: transport # Target port on the OpenSearch pods (containerPort name 'transport')

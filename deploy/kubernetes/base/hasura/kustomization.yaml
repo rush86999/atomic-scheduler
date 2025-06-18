@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hasura
+
+resources:
+  - namespace.yaml
+  - secret.yaml
+  - deployment.yaml
+  - service.yaml
+
+# Optional: Add common labels to all resources
+# commonLabels:
+#   app.kubernetes.io/name: hasura-graphql-engine
+#   app.kubernetes.io/part-of: atomic-stack
+
+# Optional: Add common annotations
+# commonAnnotations:
+#   source: "https://github.com/your-repo/atomic-stack"

@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: optaplanner-configmap
+  namespace: optaplanner
+data:
+  # PostgreSQL connection details (used to construct JDBC URL)
+  # Assuming PostgreSQL is in 'postgres' namespace with service 'postgres-service':
+  DB_HOST: "postgres-service.postgres.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "atomicdb" # Or a dedicated DB for Optaplanner if preferred
+
+  # Quarkus Datasource Configuration
+  # QUARKUS_DATASOURCE_JDBC_URL is constructed by the application/entrypoint or explicitly here.
+  # For explicitness, we can define it here using the values above.
+  # Note: Direct variable substitution like $(DB_HOST) doesn't work in ConfigMap values.
+  # The application itself will need to be configured to build this URL from DB_HOST, DB_PORT, DB_NAME,
+  # or this ConfigMap provides the full URL if the app doesn't do such construction.
+  # Let's assume the app can take DB_HOST, DB_PORT, DB_NAME and construct the URL,
+  # or we can set the full URL here if that's how the app is configured.
+  # The prompt implies QUARKUS_DATASOURCE_JDBC_URL should be constructed.
+  # If the image's entrypoint doesn't do this, this value might need to be generated dynamically during deployment
+  # or the application code adapted.
+  # For now, I'll put the constructed string, assuming it's for reference or direct use if the app supports it.
+  # A better pattern is for the app to use DB_HOST, DB_PORT, DB_NAME vars.
+  # The prompt asks for QUARKUS_DATASOURCE_JDBC_URL to be constructed, so I will provide it as a fully formed string.
+  QUARKUS_DATASOURCE_JDBC_URL: "jdbc:postgresql://postgres-service.postgres.svc.cluster.local:5432/atomicdb"
+  QUARKUS_DATASOURCE_DB-KIND: "postgresql"
+
+  # Optaplanner application user (for datasource, not Optaplanner's own API auth)
+  # This will be mapped to QUARKUS_DATASOURCE_USERNAME in the deployment.
+  USERNAME: "postgres" # This should match the POSTGRES_USER from the secret for the datasource.
+
+  # Optaplanner specific settings (non-sensitive)
+  # Example: if there are any specific Quarkus properties for OptaPlanner
+  # QUARKUS_OPTAPLANNER_SOLVER_TERMINATION_SPENT_LIMIT: "PT30S" # 30 seconds
+
+  # Application port (though often defined in Quarkus application.properties)
+  QUARKUS_HTTP_PORT: "8081" # Default Quarkus port is 8080, but compose uses 8081 for this service.
+
+  # Logging level (example)
+  QUARKUS_LOG_LEVEL: "INFO"

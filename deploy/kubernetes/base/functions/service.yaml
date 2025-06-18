@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: functions-service
+  namespace: functions
+  labels:
+    app: functions
+spec:
+  type: ClusterIP
+  selector:
+    app: functions # Selects the functions pods
+  ports:
+    - name: main
+      protocol: TCP
+      port: 3000 # Port the service will listen on for main traffic
+      targetPort: main # Name of the port in the Deployment's podSpec (containerPort 3000)
+    - name: secondary
+      protocol: TCP
+      port: 3030 # Port the service will listen on for secondary traffic
+      targetPort: secondary # Name of the port in the Deployment's podSpec (containerPort 3030)

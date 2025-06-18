@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: opensearch
+  namespace: opensearch
+  labels:
+    app: opensearch
+spec:
+  serviceName: "opensearch-headless" # Connects to the headless service for stable network ID
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opensearch
+  template:
+    metadata:
+      labels:
+        app: opensearch
+    spec:
+      terminationGracePeriodSeconds: 30 # Allow time for OpenSearch to shut down gracefully
+      # OpenSearch recommends specific sysctl settings for performance (e.g., vm.max_map_count).
+      # This usually requires initContainers with privileged access or node-level configuration.
+      # For a base setup, we'll skip direct sysctl modification from the pod.
+      # initContainers:
+      # - name: configure-sysctl
+      #   image: busybox
+      #   command: ["sh", "-c", "sysctl -w vm.max_map_count=262144"]
+      #   securityContext:
+      #     privileged: true # Requires appropriate PSP/SCC
+      containers:
+        - name: opensearch
+          image: opensearchproject/opensearch:1.2.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"] # Required for bootstrap.memory_lock=true
+            # runAsUser: 1000 # OpenSearch image runs as opensearch user (UID 1000) by default
+            # runAsGroup: 1000
+          ports:
+            - name: http
+              containerPort: 9200
+              protocol: TCP
+            - name: transport
+              containerPort: 9600
+              protocol: TCP
+          env:
+            - name: cluster.name
+              value: "opensearch-cluster"
+            - name: node.name
+              # value: "opensearch-node1" # Fixed name, or use dynamic from pod name
+              valueFrom: # Use pod name for node.name for clarity if scaled (though single replica here)
+                fieldRef:
+                  fieldPath: metadata.name
+            # For a single-node cluster, discovery can point to itself.
+            # The headless service provides a stable FQDN for the pod: opensearch-0.opensearch-headless.opensearch.svc.cluster.local
+            - name: discovery.seed_hosts
+              value: "opensearch-0.opensearch-headless.opensearch.svc.cluster.local"
+            - name: cluster.initial_master_nodes # For bootstrapping a new cluster
+              value: "opensearch-0" # Pod name of the initial master
+            - name: bootstrap.memory_lock
+              value: "true" # Lock memory, ensure IPC_LOCK capability and host ulimits
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms512m -Xmx512m" # Adjust heap size as needed
+            - name: DISABLE_INSTALL_DEMO_CONFIG # From compose, disables demo security plugin
+              value: "true"
+            # For a single node cluster, these settings are typical
+            - name: discovery.type
+              value: "single-node" # Simplifies discovery for a single node setup
+            # - name: path.data # Default is /usr/share/opensearch/data, which is mounted
+            # - name: path.logs # Default is /usr/share/opensearch/logs, consider separate PVC for logs in production
+
+          volumeMounts:
+            - name: opensearch-data
+              mountPath: /usr/share/opensearch/data
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health?local=true # Check local node health
+              port: http # 9200
+              scheme: HTTP # Assuming HTTP for now, HTTPS if security is enabled
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health?local=true
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 60 # Give more time for initial startup
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5 # Be more tolerant for liveness
+      volumes:
+        - name: opensearch-data
+          persistentVolumeClaim:
+            claimName: opensearch-data-pvc
