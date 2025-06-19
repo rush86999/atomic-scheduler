@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  CloudFormation template to deploy a Quarkus application on AWS Lambda
+  with an HTTP API Gateway.
+
+Parameters:
+  S3BucketCode:
+    Type: String
+    Description: The S3 bucket name where the Lambda code (quarkus-app.zip) is stored.
+  S3KeyCode:
+    Type: String
+    Description: The S3 key (path) for the Lambda code (quarkus-app.zip).
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  QuarkusLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: quarkus-lambda-app
+      Handler: io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest
+      Runtime: java11
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref S3BucketCode
+        S3Key: !Ref S3KeyCode
+      MemorySize: 512
+      Timeout: 30
+      Environment:
+        Variables:
+          QUARKUS_LAMBDA_HANDLER: default
+          DISABLE_SIGNAL_HANDLERS: "true"
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: QuarkusAppHttpApi
+      ProtocolType: HTTP
+
+  LambdaHttpIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt QuarkusLambdaFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  HttpApiDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: $default
+      Target: !Sub "integrations/${LambdaHttpIntegration}"
+
+  HttpApiDefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: $default
+      AutoDeploy: true
+
+  ApiGatewayInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref QuarkusLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/${HttpApiDefaultStage.StageName}/*/*"
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/quarkus-lambda-app
+      RetentionInDays: 14
+
+Outputs:
+  HttpApiEndpoint:
+    Description: "HTTP API endpoint URL for Quarkus Lambda App"
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  QuarkusLambdaFunctionArn:
+    Description: "ARN of the Quarkus Lambda Function"
+    Value: !GetAtt QuarkusLambdaFunction.Arn
+  LambdaExecutionRoleArn:
+    Description: "ARN of the Lambda Execution Role"
+    Value: !GetAtt LambdaExecutionRole.Arn
+  HttpApiId:
+    Description: "ID of the HTTP API Gateway"
+    Value: !Ref HttpApi
