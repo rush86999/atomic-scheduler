@@ -516,7 +516,8 @@ class TimeTableResourceTest {
             participantNames = listOf(sarahId.toString(), johnId.toString()), // Using UUIDs as names per current logic
             durationMinutes = 30,
             preferredDate = "2024-07-24", // Example: a Wednesday
-            preferredTime = "14:00:00"
+            preferredStartTimeFrom = "14:00:00",
+            preferredStartTimeTo = "16:00:00"
         )
 
         given()

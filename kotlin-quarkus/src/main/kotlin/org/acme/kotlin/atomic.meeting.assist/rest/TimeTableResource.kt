@@ -181,9 +181,13 @@ data class ScheduleMeetingRequest(
     @field:NotBlank(message = "preferredDate must not be blank")
     val preferredDate: String, // Consider using LocalDate directly if client can send in ISO format
 
-    @field:JsonProperty("preferredTime") // e.g., "14:00:00" for 2 PM
-    @field:NotBlank(message = "preferredTime must not be blank")
-    val preferredTime: String // Consider using LocalTime directly
+    @field:JsonProperty("preferredStartTimeFrom") // e.g., "14:00:00" for 2 PM
+    @field:NotBlank(message = "preferredStartTimeFrom must not be blank")
+    val preferredStartTimeFrom: String, // Consider using LocalTime directly
+
+    @field:JsonProperty("preferredStartTimeTo") // e.g., "16:00:00" for 4 PM
+    @field:NotBlank(message = "preferredStartTimeTo must not be blank")
+    val preferredStartTimeTo: String // Consider using LocalTime directly
 )
 
 data class PostStopSingletonRequestBody(
@@ -661,7 +665,9 @@ class TimeTableResource {
         // 2. Generate Timeslots for the next week, prioritizing preferred day/time
         val nextWeekTimeslots = mutableListOf<Timeslot>()
         val preferredRequestDate = LocalDate.parse(request.preferredDate)
-        val preferredRequestTime = LocalTime.parse(request.preferredTime)
+        // Parse the preferred start time range from the request
+        val preferredRequestStartTimeFrom = LocalTime.parse(request.preferredStartTimeFrom)
+        val preferredRequestStartTimeTo = LocalTime.parse(request.preferredStartTimeTo)
 
         val calendarNow = Calendar.getInstance()
         val today = LocalDate.now()
@@ -717,8 +723,11 @@ class TimeTableResource {
                 groupId = meetingEventId, // Group all parts of this meeting together
                 part = 1,
                 lastPart = 1, // Assuming a single-slot meeting for now
-                startDate = LocalDateTime.of(preferredRequestDate, preferredRequestTime).toString(),
-                endDate = LocalDateTime.of(preferredRequestDate, preferredRequestTime.plusMinutes(request.durationMinutes.toLong())).toString(),
+                // startDate and endDate are more like overall validity for the EventPart, not strictly the preferred slot
+                // The actual preferred slot is now a range.
+                // Let's set startDate to the beginning of the preferred day and endDate to the end of the preferred day.
+                startDate = LocalDateTime.of(preferredRequestDate, LocalTime.MIN).toString(),
+                endDate = LocalDateTime.of(preferredRequestDate, LocalTime.MAX).toString(),
                 taskId = null,
                 softDeadline = null,
                 hardDeadline = null,
@@ -736,7 +745,7 @@ class TimeTableResource {
                 negativeImpactTime = null,
                 modifiable = true,
                 preferredDayOfWeek = preferredRequestDate.dayOfWeek, // Set preferred day
-                preferredTime = preferredRequestTime, // Set preferred time
+                preferredTime = null, // Set to null as we are using ranges now
                 isMeeting = true,
                 isExternalMeeting = false,
                 isExternalMeetingModifiable = true,
@@ -744,8 +753,8 @@ class TimeTableResource {
                 dailyTaskList = false,
                 weeklyTaskList = false,
                 gap = false,
-                preferredStartTimeRange = null,
-                preferredEndTimeRange = null,
+                preferredStartTimeRange = preferredRequestStartTimeFrom, // Set preferred start of range
+                preferredEndTimeRange = preferredRequestStartTimeTo,   // Set preferred end of range
                 totalWorkingHours = 8, // Default, might need adjustment
                 eventId = meetingEventId,
                 event = meetingEvent,
