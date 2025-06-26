@@ -28,6 +28,11 @@ import org.mockito.ArgumentCaptor
 import org.mockito.Captor
 import org.mockito.Mock
 import org.mockito.MockitoAnnotations
+import org.acme.kotlin.atomic.meeting.assist.domain.TimeTable // Added for SolverManager type
+import org.optaplanner.core.api.solver.SolverManager // Added for SolverManager type
+import org.hamcrest.Matchers.equalTo // Added for assertion
+import org.hamcrest.Matchers.notNullValue // Added for assertion
+
 
 // NOTE: @TestTransaction is not available in Quarkus 1.x.
 // For Quarkus 2.x+, it can be used on test methods to roll back transactions.
@@ -476,4 +481,58 @@ class TimeTableResourceTest {
             .body("userList.size()", Matchers.equalTo(0))
     }
 
+    // Inject SolverManager mock for the new test
+    @InjectMock
+    lateinit var solverManager: SolverManager<TimeTable, UUID>
+
+    @Test
+    fun `test scheduleMeeting endpoint`() {
+        // 1. Mock UserRepository
+        val sarahId = UUID.randomUUID()
+        val johnId = UUID.randomUUID()
+        val commonHostId = UUID.randomUUID() // Define a common hostId for users
+
+        val sarahUser = User(sarahId, commonHostId, 85, false, 8, 2, mutableListOf(
+            WorkTime(UUID.randomUUID(), sarahId, commonHostId, DayOfWeek.WEDNESDAY, LocalTime.of(9,0), LocalTime.of(17,0))
+        ))
+        val johnUser = User(johnId, commonHostId, 85, false, 8, 2, mutableListOf(
+            WorkTime(UUID.randomUUID(), johnId, commonHostId, DayOfWeek.WEDNESDAY, LocalTime.of(9,0), LocalTime.of(17,0))
+        ))
+
+        // Mock the behavior of listAll()
+        `when`(userRepository.listAll()).thenReturn(listOf(sarahUser, johnUser))
+        // If find("id", ...) is used, mock that instead or additionally.
+        // For the simplified user lookup `userRepository.listAll().find { it.id.toString() == name }`:
+        // The above `listAll()` mock is sufficient.
+
+
+        // 2. Mock SolverManager (already injected with @InjectMock)
+        // No specific mock behavior needed for solverManager for this test,
+        // as we are primarily testing the endpoint logic up to the call to createTableAndSolve.
+        // createTableAndSolve itself calls solverManager.solveAndListen.
+        // The @InjectMock handles providing a default mock.
+
+        val requestPayload = ScheduleMeetingRequest(
+            participantNames = listOf(sarahId.toString(), johnId.toString()), // Using UUIDs as names per current logic
+            durationMinutes = 30,
+            preferredDate = "2024-07-24", // Example: a Wednesday
+            preferredTime = "14:00:00"
+        )
+
+        given()
+            .contentType(ContentType.JSON)
+            .body(requestPayload)
+        .`when`()
+            .post("/timeTable/user/scheduleMeeting")
+        .then()
+            .statusCode(202) // Accepted
+            .body("message", equalTo("Meeting scheduling initiated."))
+            .body("singletonId", notNullValue()) // Check that singletonId is present in response
+
+        // Further verification could involve ArgumentCaptor on `solverManager.solveAndListen`
+        // or on the repository `persist` calls within `createTableAndSolve` to ensure
+        // the EventParts have `preferredDayOfWeek` and `preferredTime` set correctly.
+        // This would make the test more white-box and coupled to implementation details of createTableAndSolve.
+        // For now, a 202 response indicates the main path of `scheduleMeeting` executed.
+    }
 }

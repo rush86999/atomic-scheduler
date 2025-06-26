@@ -65,7 +65,27 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 maxWorkloadConflictSoftPenalize(constraintFactory),
                 minNumberOfBreaksConflictSoftPenalize(constraintFactory),
                 prioritizeTasksWithEarlierDeadlines(constraintFactory),
+                rewardPreferredMeetingTimeSoftReward(constraintFactory), // New constraint
         )
+    }
+
+    private fun rewardPreferredMeetingTimeSoftReward(constraintFactory: ConstraintFactory): Constraint {
+        return constraintFactory
+            .forEach(EventPart::class.java)
+            .filter { eventPart ->
+                eventPart.isMeeting && // Only apply to meetings
+                eventPart.preferredDayOfWeek != null &&
+                eventPart.preferredTime != null &&
+                eventPart.timeslot != null &&
+                eventPart.timeslot?.dayOfWeek != null &&
+                eventPart.timeslot?.startTime != null &&
+                eventPart.part == 1 // Apply to the first part of the meeting
+            }
+            .filter { eventPart ->
+                eventPart.timeslot!!.dayOfWeek == eventPart.preferredDayOfWeek &&
+                eventPart.timeslot!!.startTime == eventPart.preferredTime
+            }
+            .reward("Reward preferred meeting time soft", HardMediumSoftScore.TEN_SOFT) // Reward significantly
     }
 
     private fun prioritizeTasksWithEarlierDeadlines(constraintFactory: ConstraintFactory): Constraint {
