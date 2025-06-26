@@ -21,10 +21,14 @@ import org.http4k.format.Jackson.json
 import org.optaplanner.core.api.score.ScoreManager
 import org.optaplanner.core.api.score.buildin.hardmediumsoft.HardMediumSoftScore
 import org.optaplanner.core.api.solver.SolverManager
+import java.time.LocalDate
+import java.time.LocalTime
 import java.time.LocalDateTime
+import java.time.MonthDay
 import java.util.*
 import javax.annotation.security.RolesAllowed
 import javax.inject.Inject
+import javax.ws.rs.core.Response
 import javax.transaction.Transactional
 import javax.validation.Valid
 import javax.validation.constraints.Min
@@ -162,6 +166,24 @@ data class PostTableRequestBody(
     @field:NotBlank(message = "callBackUrl must not be blank")
     // Consider adding @org.hibernate.validator.constraints.URL if available and desired
     val callBackUrl: String,
+)
+
+data class ScheduleMeetingRequest(
+    @field:JsonProperty("participantNames")
+    @field:NotEmpty(message = "participantNames must not be empty")
+    val participantNames: List<String>,
+
+    @field:JsonProperty("durationMinutes")
+    @field:Min(value = 1, message = "durationMinutes must be at least 1")
+    val durationMinutes: Int,
+
+    @field:JsonProperty("preferredDate") // e.g., "2024-07-17" for next Wednesday
+    @field:NotBlank(message = "preferredDate must not be blank")
+    val preferredDate: String, // Consider using LocalDate directly if client can send in ISO format
+
+    @field:JsonProperty("preferredTime") // e.g., "14:00:00" for 2 PM
+    @field:NotBlank(message = "preferredTime must not be blank")
+    val preferredTime: String // Consider using LocalTime directly
 )
 
 data class PostStopSingletonRequestBody(
@@ -599,6 +621,170 @@ class TimeTableResource {
         @PathParam("id") id: UUID,
     ) {
         deleteTableGivenUser(id)
+    }
+
+    @POST
+    @Path("/user/scheduleMeeting")
+    @Transactional
+    fun scheduleMeeting(@Valid request: ScheduleMeetingRequest): Response {
+        LOGGER.info("Received scheduleMeeting request: $request")
+
+        // 1. Fetch User data for participants
+        val participants = request.participantNames.mapNotNull { name ->
+            // Assuming a method findByNameInHost exists or will be added to UserRepository
+            // For now, let's placeholder this. Actual implementation might need a specific hostId.
+            // val user = userRepository.find("name = ?1 and hostId = ?2", name, someHostId).firstResult()
+            // This is a simplified lookup. In a real scenario, you'd need a robust way to get users.
+            // For this example, let's assume userRepository has a findByName method.
+            // If users are global or hostId is implicit/derived, this might work.
+            // Otherwise, hostId needs to be part of the request or context.
+            userRepository.listAll().find { it.id.toString() == name } // Simplified: find by ID if name is UUID
+            // A more realistic approach would be:
+            // userRepository.find("name", name).firstResult<User>()
+            // Or if users are tied to a host:
+            // userRepository.find("name = ?1 and hostId = ?2", name, someHostId).firstResult<User>()
+        }
+
+        if (participants.size != request.participantNames.size) {
+            LOGGER.warn("Could not find all participants: ${request.participantNames}. Found: ${participants.map { it.id }}")
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity("Could not find all participants").build()
+        }
+
+        val hostId = UUID.randomUUID() // Or determine from context/request
+        val singletonId = UUID.randomUUID()
+        val fileKey = "meeting-${UUID.randomUUID()}"
+        // TODO: Make callback URL configurable
+        val callBackUrl = "http://localhost:8080/callback/meetingScheduled"
+        val delayMs = 5000L // 5 seconds delay for solver
+
+        // 2. Generate Timeslots for the next week, prioritizing preferred day/time
+        val nextWeekTimeslots = mutableListOf<Timeslot>()
+        val preferredRequestDate = LocalDate.parse(request.preferredDate)
+        val preferredRequestTime = LocalTime.parse(request.preferredTime)
+
+        val calendarNow = Calendar.getInstance()
+        val today = LocalDate.now()
+        var currentDate = today.with(java.time.DayOfWeek.MONDAY)
+        if (currentDate.isBefore(today)) { // ensure we start from next week if today is past Monday
+            currentDate = currentDate.plusWeeks(1)
+        }
+
+
+        for (i in 0 until 7) { // For each day of next week
+            val dayDate = currentDate.plusDays(i.toLong())
+            // Create timeslots for the whole day, e.g., 9 AM to 5 PM in 30-min intervals
+            var slotTime = LocalTime.of(9, 0)
+            val dayEndTime = LocalTime.of(17, 0)
+            while (slotTime.isBefore(dayEndTime)) {
+                val endTime = slotTime.plusMinutes(request.durationMinutes.toLong())
+                if (endTime.isAfter(dayEndTime)) break // Don't create slots past day end
+
+                val timeslot = Timeslot(
+                    dayOfWeek = dayDate.dayOfWeek,
+                    startTime = slotTime,
+                    endTime = endTime,
+                    monthDay = MonthDay.of(dayDate.month, dayDate.dayOfMonth),
+                    userId = hostId, // Assuming timeslots are host-specific
+                    date = dayDate
+                )
+                // Prioritization will be handled by constraints based on preferredDate and preferredTime
+                nextWeekTimeslots.add(timeslot)
+                slotTime = endTime // Next slot starts where the previous one ended
+            }
+        }
+
+        if (nextWeekTimeslots.isEmpty()) {
+            LOGGER.warn("No timeslots generated for the meeting request.")
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity("Could not generate timeslots for scheduling.").build()
+        }
+
+        // 3. Create Event and EventPart for the meeting
+        val meetingEventId = "meeting-${UUID.randomUUID()}"
+        val meetingEvent = Event(
+            id = meetingEventId,
+            preferredTimeRanges = null, // Can add preferred ranges if needed
+            userId = hostId, // Assuming event is host-specific or tied to a primary user
+            hostId = hostId,
+            eventType = EventType.ONE_ON_ONE_MEETING // Or GROUP_MEETING if more than 2
+        )
+
+        val eventPartsForMeeting = mutableListOf<EventPart>()
+        // Create an EventPart for each participant
+        participants.forEach { participant ->
+            val eventPart = EventPart(
+                groupId = meetingEventId, // Group all parts of this meeting together
+                part = 1,
+                lastPart = 1, // Assuming a single-slot meeting for now
+                startDate = LocalDateTime.of(preferredRequestDate, preferredRequestTime).toString(),
+                endDate = LocalDateTime.of(preferredRequestDate, preferredRequestTime.plusMinutes(request.durationMinutes.toLong())).toString(),
+                taskId = null,
+                softDeadline = null,
+                hardDeadline = null,
+                userId = participant.id, // User ID of the participant
+                user = participant,
+                priority = 1, // High priority for meetings
+                isPreEvent = false,
+                isPostEvent = false,
+                forEventId = null,
+                positiveImpactScore = 0,
+                negativeImpactScore = 0,
+                positiveImpactDayOfWeek = null,
+                positiveImpactTime = null,
+                negativeImpactDayOfWeek = null,
+                negativeImpactTime = null,
+                modifiable = true,
+                preferredDayOfWeek = preferredRequestDate.dayOfWeek, // Set preferred day
+                preferredTime = preferredRequestTime, // Set preferred time
+                isMeeting = true,
+                isExternalMeeting = false,
+                isExternalMeetingModifiable = true,
+                isMeetingModifiable = true,
+                dailyTaskList = false,
+                weeklyTaskList = false,
+                gap = false,
+                preferredStartTimeRange = null,
+                preferredEndTimeRange = null,
+                totalWorkingHours = 8, // Default, might need adjustment
+                eventId = meetingEventId,
+                event = meetingEvent,
+                hostId = hostId, // Host ID for this event part
+                meetingId = meetingEventId, // Link to the meeting
+                meetingPart = 1,
+                meetingLastPart = 1
+            )
+            eventPartsForMeeting.add(eventPart)
+        }
+
+
+        // 4. Construct PostTableRequestBody
+        val postBody = PostTableRequestBody(
+            singletonId = singletonId,
+            hostId = hostId,
+            timeslots = nextWeekTimeslots,
+            userList = participants.toMutableList(),
+            eventParts = eventPartsForMeeting,
+            fileKey = fileKey,
+            delay = delayMs,
+            callBackUrl = callBackUrl
+        )
+
+        // 5. Call createTableAndSolve
+        // This method is not suspending, but it launches a coroutine internally.
+        createTableAndSolve(
+            singletonId,
+            hostId,
+            postBody.timeslots!!,
+            postBody.userList!!,
+            postBody.eventParts!!,
+            postBody.fileKey,
+            postBody.delay,
+            postBody.callBackUrl
+        )
+
+        LOGGER.info("Meeting scheduling initiated for singletonId: $singletonId")
+        return Response.accepted(mapOf("message" to "Meeting scheduling initiated.", "singletonId" to singletonId.toString())).build()
     }
 
 }
