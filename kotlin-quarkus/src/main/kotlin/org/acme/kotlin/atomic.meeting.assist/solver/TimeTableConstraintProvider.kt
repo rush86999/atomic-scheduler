@@ -65,28 +65,11 @@ class TimeTableConstraintProvider : ConstraintProvider {
                 maxWorkloadConflictSoftPenalize(constraintFactory),
                 minNumberOfBreaksConflictSoftPenalize(constraintFactory),
                 prioritizeTasksWithEarlierDeadlines(constraintFactory),
-                rewardPreferredMeetingTimeSoftReward(constraintFactory), // New constraint
+                // rewardPreferredMeetingTimeSoftReward removed
         )
     }
 
-    private fun rewardPreferredMeetingTimeSoftReward(constraintFactory: ConstraintFactory): Constraint {
-        return constraintFactory
-            .forEach(EventPart::class.java)
-            .filter { eventPart ->
-                eventPart.isMeeting && // Only apply to meetings
-                eventPart.preferredDayOfWeek != null &&
-                eventPart.preferredTime != null &&
-                eventPart.timeslot != null &&
-                eventPart.timeslot?.dayOfWeek != null &&
-                eventPart.timeslot?.startTime != null &&
-                eventPart.part == 1 // Apply to the first part of the meeting
-            }
-            .filter { eventPart ->
-                eventPart.timeslot!!.dayOfWeek == eventPart.preferredDayOfWeek &&
-                eventPart.timeslot!!.startTime == eventPart.preferredTime
-            }
-            .reward("Reward preferred meeting time soft", HardMediumSoftScore.TEN_SOFT) // Reward significantly
-    }
+    // rewardPreferredMeetingTimeSoftReward function removed
 
     private fun prioritizeTasksWithEarlierDeadlines(constraintFactory: ConstraintFactory): Constraint {
         return constraintFactory
@@ -851,36 +834,35 @@ class TimeTableConstraintProvider : ConstraintProvider {
     fun notPreferredScheduleStartTimeRangeMediumPenalize(constraintFactory: ConstraintFactory): Constraint {
         return constraintFactory
             .forEach(EventPart::class.java)
-            .filter { eventPart: EventPart -> (eventPart.preferredStartTimeRange != null) && (eventPart.preferredEndTimeRange != null) }
-            .filter { eventPart: EventPart -> eventPart.part == 1 }
-            .filter { eventPart: EventPart ->
-                val totalParts = eventPart.lastPart
-                val partDuration = Duration.between(eventPart.timeslot?.startTime ?: LocalTime.parse("00:00"), eventPart.timeslot?.endTime ?: LocalTime.parse("00:15"))
-                val totalMinutes = totalParts * partDuration.toMinutes()
-                val totalDuration = Duration.ofMinutes(totalMinutes)
-                val timeslot = eventPart.timeslot!! // Checked not null
-                val workTime = eventPart.user.workTimes.find { wt -> wt.dayOfWeek == timeslot.dayOfWeek }
-
-                if (workTime == null || workTime.endTime == null || eventPart.preferredStartTimeRange == null) {
-                    return@filter true // Penalize if essential info for check is missing
-                }
-                val possibleEndTime = timeslot.startTime!!.plus(totalDuration) // startTime checked
-
-                (timeslot.startTime < eventPart.preferredStartTimeRange!!) || // startTime checked
-                        (possibleEndTime > workTime.endTime)
+            .filter { eventPart -> eventPart.timeslot != null } // Ensure timeslot is assigned
+            .filter { eventPart -> eventPart.preferredStartTimeRange != null } // Check this specific preference exists
+            .filter { eventPart -> eventPart.part == 1 } // Apply to the first part of an event
+            .filter { eventPart ->
+                // Penalize if the event's actual start time is before its preferred start time range
+                eventPart.timeslot!!.startTime < eventPart.preferredStartTimeRange!!
             }
-            .penalize("timeslot not in preferred start time range medium penalize", HardMediumSoftScore.ONE_MEDIUM)
+            .penalize("Scheduled start time is before preferred start time range", HardMediumSoftScore.ONE_MEDIUM)
     }
 
     fun notPreferredScheduleEndTimeRangeMediumPenalize(constraintFactory: ConstraintFactory): Constraint {
         return constraintFactory
             .forEach(EventPart::class.java)
-            .filter { eventPart: EventPart -> (eventPart.preferredStartTimeRange != null) && (eventPart.preferredEndTimeRange != null) }
-            .filter { eventPart: EventPart -> eventPart.part == eventPart.lastPart }
-            .filter { eventPart: EventPart ->
-                eventPart.timeslot!!.endTime > eventPart.preferredEndTimeRange!!
+            .filter { eventPart -> eventPart.timeslot != null } // Ensure timeslot is assigned
+            .filter { eventPart -> eventPart.preferredEndTimeRange != null } // Check this specific preference exists
+            // No need to filter for eventPart.part == eventPart.lastPart,
+            // as the preferredEndTimeRange applies to the desired end time of the event's timeslot.
+            // If an event spans multiple timeslots, this would apply to the end time of each part's timeslot.
+            // For a single-slot meeting, this is fine. For multi-slot, this means each part should ideally end within this range.
+            // The problem description implies the range is for the start time.
+            // Let's assume preferredEndTimeRange on EventPart means "the event should start such that it ends by this time, OR the preferred start slot itself should end by this time."
+            // Given the DTO has preferredStartTimeFrom and preferredStartTimeTo, this means the *chosen start slot* should be within this window.
+            // So, notPreferredScheduleEndTimeRangeMediumPenalize should check if timeslot.startTime > eventPart.preferredEndTimeRange (which is derived from DTO's preferredStartTimeTo)
+            .filter { eventPart ->
+                // Penalize if the event's actual start time is after its preferred end time of the start range.
+                // (i.e., event starts after the preferred window to start has closed)
+                eventPart.timeslot!!.startTime > eventPart.preferredEndTimeRange!! // preferredEndTimeRange here means the end of the preferred *start* window
             }
-            .penalize("timeslot not in preferred end time range medium penalize", HardMediumSoftScore.ONE_MEDIUM)
+            .penalize("Scheduled start time is after preferred start time window ends", HardMediumSoftScore.ONE_MEDIUM)
     }
 
     fun externalMeetingModifiableConflictMediumPenalize(constraintFactory: ConstraintFactory): Constraint {

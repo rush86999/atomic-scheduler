@@ -79,16 +79,18 @@ When calling the `/scheduleMeeting` endpoint, your application must send a JSON 
   "participantNames": ["string (User ID/Name)", "string (User ID/Name)"], // Required: List of names or unique IDs of participants
   "durationMinutes": "number (integer)",         // Required: Duration of the meeting in minutes (e.g., 30)
   "preferredDate": "string (YYYY-MM-DD)",        // Required: Preferred date for the meeting (e.g., "2024-07-24")
-  "preferredTime": "string (HH:MM:SS)"           // Required: Preferred start time for the meeting (e.g., "14:00:00")
+  "preferredStartTimeFrom": "string (HH:MM:SS)", // Required: Preferred start of the time window for the meeting (e.g., "14:00:00")
+  "preferredStartTimeTo": "string (HH:MM:SS)"    // Required: Preferred end of the time window for the meeting (e.g., "16:00:00")
 }
 ```
 **Field Descriptions:**
 *   `participantNames`: An array of strings, where each string is a unique identifier for a user (e.g., their UUID or a unique username that can be resolved by the system).
 *   `durationMinutes`: The desired length of the meeting in minutes.
 *   `preferredDate`: The preferred date for the meeting in `YYYY-MM-DD` format. The scheduler will prioritize this date.
-*   `preferredTime`: The preferred start time for the meeting on the `preferredDate`, in `HH:MM:SS` format (24-hour clock). The scheduler will prioritize this time.
+*   `preferredStartTimeFrom`: The start of the preferred time window for the meeting to begin, in `HH:MM:SS` format (e.g., "14:00:00").
+*   `preferredStartTimeTo`: The end of the preferred time window for the meeting to begin, in `HH:MM:SS` format (e.g., "16:00:00"). The meeting should start at or before this time.
 
-The system will then attempt to find a common available slot for all participants for the given duration, trying to match the preferred date and time. The actual scheduling problem submitted to the backend solver will be constructed based on this request.
+The system will then attempt to find a common available slot for all participants for the given duration, trying to schedule the start of the meeting within the preferred date and time window. The actual scheduling problem submitted to the backend solver will be constructed based on this request.
 
 ---
 
