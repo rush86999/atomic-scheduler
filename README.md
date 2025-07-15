@@ -1,4 +1,4 @@
-# Atomic-Scheduler - a part of [Atomic](https://github.com/rush86999/atomic)
+# Atomic-Scheduler - a part of [Atom](https://github.com/rush86999/atom)
 
 ⭐⭐⭐ If you like where this repo is heading, please support me with a star on the top right corner ⭐⭐⭐
 
