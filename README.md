@@ -1,23 +1,9 @@
 # Atomic-Scheduler - a part of [Atom](https://github.com/rush86999/atom)
 
-⭐⭐⭐ If you like where this repo is heading, please support me with a star on the top right corner ⭐⭐⭐
-
-⭐⭐⭐ Self hosted now available :) ⭐⭐⭐
-
-
-https://github.com/rush86999/atomic/assets/16848240/da8c0826-573e-44a4-849b-083d61dc4c60
-
-https://github.com/rush86999/atomic/assets/16848240/b2dc08e8-8e9f-41b5-b249-dadb13b914c6
-
-https://github.com/rush86999/atomic/assets/16848240/9390a703-31fa-4622-b6be-818bf462b3f8
-
-https://github.com/rush86999/atomic/assets/16848240/5720e9a3-e4d6-4dce-8e3c-5d614a39e305
-
 
 ## Table of Contents
 - [Table of Contents](#table-of-contents)
 - [Problem](#problem)
-- [Documentation](#documentation)
 - [Demo](#demo)
 - [Features](#features)
     - [Benefits of Self Hosted](#benefits-of-self-hosted)
@@ -57,11 +43,6 @@ Examples:
 10. "Do I have any free time on Thursday?"
 
 
-For simple 1:1 meetings, you won't need calendly links anymore. Your recipient replies to you and Atomic, and a meeting gets scheduled for you automatically.
-
-## Documentation
-
-- You can find documentation on how to use Atomic at https://docs.atomiclife.app
 
 ## Demo
 
